@@ -23,7 +23,7 @@ namespace WinOpenID
         /// <summary>
         /// List of hosts allowed to deal with this OpenIDConnect Server
         /// </summary>
-        public List<String> allowedHosts = new List<String> { "http://localhost", "https://localhost", "https://intranet.mps.com.br", "https://oidcdebugger.com" };
+        public List<string> allowedHosts = new List<string> { "http://localhost", "https://localhost", "https://intranet.mps.com.br", "https://oidcdebugger.com" };
 
         // This method gets called by the runtime. Use this method to add services to the container.
         // For more information on how to configure your application, visit https://go.microsoft.com/fwlink/?LinkID=398940
@@ -39,6 +39,7 @@ namespace WinOpenID
             {
                 // This OpenIddict server is stateless; however, make sure IIS doesn't dispose of the application too often (ie, via app pool recycles or shut downs due to inactivity)
                 options.AddEphemeralSigningKey().AddEphemeralEncryptionKey();
+                options.DisableAccessTokenEncryption();
                 options.AllowAuthorizationCodeFlow();
                 options.AllowImplicitFlow();
                 options.SetAuthorizationEndpointUris("/connect/authorize")
@@ -47,15 +48,20 @@ namespace WinOpenID
                 options.UseAspNetCore()
                     .DisableTransportSecurityRequirement(); // Disable the need for HTTPS in dev
                 options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles); // Tell OpenIddict that we support these scopes
+                options.RegisterClaims(
+                    Claims.Name, Claims.PreferredUsername, Claims.Email, Claims.GivenName, Claims.FamilyName,
+                    Claims.EmailVerified, Claims.PhoneNumber, Claims.PhoneNumberVerified,
+                    Claims.Role, "employee_id"
+                );
 
                 // Event handler for validating authorization requests
                 options.AddEventHandler<ValidateAuthorizationRequestContext>(builder =>
                     builder.UseInlineHandler(context =>
                     {
                         // Verification: I accept all context.ClientId's, but do check to see if the context.RedirectUri is proper
-                        foreach (String str in allowedHosts)
+                        foreach (string host in allowedHosts)
                         {
-                            if (context.RedirectUri.StartsWith(str, StringComparison.InvariantCultureIgnoreCase))
+                            if (context.RedirectUri.StartsWith(host, StringComparison.InvariantCultureIgnoreCase))
                             {
                                 return default;
                             }
@@ -106,7 +112,7 @@ namespace WinOpenID
                             if (context.Request.HasScope(Scopes.OpenId))
                             {
                                 // Add the name identifier claim; this is the user's unique identifier
-                                identity.AddClaim(Claims.Subject, result.Principal.FindFirstValue(ClaimTypes.PrimarySid), Destinations.AccessToken);
+                                identity.AddClaim(Claims.Subject, user.Guid.ToString().ToLower(), Destinations.AccessToken);
                             }
 
                             // Attach email address if requested
@@ -115,7 +121,8 @@ namespace WinOpenID
                                 // Add the user's email address
                                 if (user.EmailAddress != null)
                                 {
-                                    identity.AddClaim(ClaimTypes.Email, user.EmailAddress, Destinations.IdentityToken);
+                                    identity.AddClaim(Claims.Email, user.EmailAddress, Destinations.IdentityToken);
+                                    identity.AddClaim(new Claim(Claims.EmailVerified, "true", ClaimValueTypes.Boolean).SetDestinations(Destinations.IdentityToken));
                                 }
                             }
 
@@ -123,17 +130,24 @@ namespace WinOpenID
                             if (context.Request.HasScope(Scopes.Profile))
                             {
                                 // Add the account's friendly name
-                                identity.AddClaim(ClaimTypes.Name, user.DisplayName, Destinations.IdentityToken);
+                                identity.AddClaim(Claims.Name, user.DisplayName, Destinations.IdentityToken);
 
                                 // Add the user's windows username
-                                identity.AddClaim(ClaimTypes.WindowsAccountName, result.Principal.FindFirstValue(ClaimTypes.Name), Destinations.IdentityToken);
+                                string netbiosUserName = user.Sid.Translate(typeof(NTAccount)).ToString();
+                                identity.AddClaim(Claims.PreferredUsername, netbiosUserName, Destinations.AccessToken, Destinations.IdentityToken);
 
                                 // Add the user's name
-                                if (user.GivenName != null) { identity.AddClaim(ClaimTypes.GivenName, user.GivenName, Destinations.IdentityToken); }
-                                if (user.Surname != null) { identity.AddClaim(ClaimTypes.Surname, user.Surname, Destinations.IdentityToken); }
+                                if (user.GivenName != null) { identity.AddClaim(Claims.GivenName, user.GivenName, Destinations.IdentityToken); }
+                                if (user.Surname != null) { identity.AddClaim(Claims.FamilyName, user.Surname, Destinations.IdentityToken); }
 
-                                // Telephone #
-                                if (user.VoiceTelephoneNumber != null) { identity.AddClaim(ClaimTypes.HomePhone, user.VoiceTelephoneNumber, Destinations.IdentityToken); }
+                                if (user.EmployeeId != null) { identity.AddClaim("employee_id", user.EmployeeId, Destinations.IdentityToken); }
+
+                                // Telephone 
+                                if (user.VoiceTelephoneNumber != null) 
+                                { 
+                                    identity.AddClaim(Claims.PhoneNumber, user.VoiceTelephoneNumber, Destinations.IdentityToken);
+                                    identity.AddClaim(new Claim(Claims.PhoneNumberVerified, "true", ClaimValueTypes.Boolean).SetDestinations(Destinations.IdentityToken));
+                                }
                             }
 
                             // Attach roles if requested
@@ -144,7 +158,7 @@ namespace WinOpenID
                                 {
                                     if (group.Name != null)
                                     {
-                                        identity.AddClaim(ClaimTypes.Role, group.Name, Destinations.IdentityToken);
+                                        identity.AddClaim(Claims.Role, group.Name, Destinations.IdentityToken);
                                     }
                                 }
                             }
