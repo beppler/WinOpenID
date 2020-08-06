@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.DirectoryServices.AccountManagement;
 using System.Security.Claims;
 using System.Security.Principal;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -23,16 +24,16 @@ namespace WinOpenID
         /// <summary>
         /// List of hosts allowed to deal with this OpenIDConnect Server
         /// </summary>
-        public List<string> allowedHosts = new List<string> { "http://localhost", "https://localhost", "https://intranet.mps.com.br", "https://oidcdebugger.com" };
+        public List<string> allowedHosts = new List<string> { "https://localhost", "https://intranet.mps.com.br", "https://oidcdebugger.com" };
 
         // This method gets called by the runtime. Use this method to add services to the container.
         // For more information on how to configure your application, visit https://go.microsoft.com/fwlink/?LinkID=398940
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddAuthentication().AddCookie();
-
             // Add cross-origin resource sharing for Javascript clients
             services.AddCors();
+
+            services.AddAuthentication();
 
             // Attach OpenIddict with a ton of options
             services.AddOpenIddict().AddServer(options =>
