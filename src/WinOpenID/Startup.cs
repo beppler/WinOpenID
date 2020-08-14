@@ -116,7 +116,7 @@ namespace WinOpenID
                                 if (serverOptions.UseDomain)
                                     identity.AddClaim(Claims.Subject, user.Guid.ToString().ToLower(), Destinations.AccessToken);
                                 else
-                                    identity.AddClaim(Claims.Subject, user.Sid.ToString().ToLower(), Destinations.AccessToken);
+                                    identity.AddClaim(Claims.Subject, user.Sid.ToString(), Destinations.AccessToken);
                             }
 
                             // Attach email address if requested
