@@ -58,7 +58,7 @@ namespace WinOpenID
                 options.RegisterClaims(
                     Claims.Name, Claims.PreferredUsername, Claims.Email, Claims.GivenName, Claims.FamilyName,
                     Claims.EmailVerified, Claims.PhoneNumber, Claims.PhoneNumberVerified,
-                    Claims.Role, "employee_id"
+                    Claims.Role, "ad_employee_id"
                 );
 
                 // Event handler for validating token requests
@@ -157,7 +157,7 @@ namespace WinOpenID
                             identity.AddClaim(Claims.PreferredUsername, ntUsername, Destinations.AccessToken, Destinations.IdentityToken);
 
                             // Add the employee id number
-                            if (user.EmployeeId != null) { identity.AddClaim("employee_id", user.EmployeeId, Destinations.AccessToken, Destinations.IdentityToken); }
+                            if (user.EmployeeId != null) { identity.AddClaim("ad_employee_id", user.EmployeeId, Destinations.AccessToken, Destinations.IdentityToken); }
 
                             // Add the user's name
                             if (user.GivenName != null) { identity.AddClaim(Claims.GivenName, user.GivenName, Destinations.IdentityToken); }
