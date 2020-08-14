@@ -22,10 +22,12 @@ namespace WinOpenID
     public class Startup
     {
         public IConfiguration Configuration { get; }
+        public ServerOptions ServerOptions { get; }
 
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            ServerOptions = Configuration.GetSection(ServerOptions.Server).Get<ServerOptions>();
         }
 
         // This method gets called by the runtime. Use this method to add services to the container.
@@ -38,14 +40,12 @@ namespace WinOpenID
 
             services.AddAuthentication();
 
-            var serverOptions = Configuration.GetSection(ServerOptions.Server).Get<ServerOptions>();
-
             // Attach OpenIddict with a ton of options
             services.AddOpenIddict().AddServer(options =>
             {
                 // This OpenIddict server is stateless; however, make sure IIS doesn't dispose of the application too often (ie, via app pool recycles or shut downs due to inactivity)
                 options.AddEphemeralSigningKey().AddEphemeralEncryptionKey();
-                if (!serverOptions.EncryptAccessToken)
+                if (!ServerOptions.EncryptAccessToken)
                     options.DisableAccessTokenEncryption();
                 options.AllowAuthorizationCodeFlow();
                 options.AllowImplicitFlow();
@@ -75,7 +75,7 @@ namespace WinOpenID
                     builder.UseInlineHandler(context =>
                     {
                         // Verification: I accept all context.ClientId's, but do check to see if the context.RedirectUri is proper
-                        foreach (string host in serverOptions.AllowedHosts)
+                        foreach (string host in ServerOptions.AllowedHosts)
                         {
                             if (context.RedirectUri.StartsWith(host, StringComparison.InvariantCultureIgnoreCase))
                             {
@@ -98,94 +98,100 @@ namespace WinOpenID
                         // Try to get the authentication of the current session via Windows Authentication
                         AuthenticateResult result = await request.HttpContext.AuthenticateAsync("Windows");
 
-                        if (result?.Principal is WindowsPrincipal wp) // If we're authenticated using Windows authentication, build an Identity with Claims;
-                        {
-                            ClaimsIdentity identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType);
-
-                            // Set the directory service to the active directory domain or machine 
-                            using PrincipalContext directoryService = serverOptions.UseDomain
-                                ? new PrincipalContext(ContextType.Domain, serverOptions.Domain)
-                                : new PrincipalContext(ContextType.Machine);
-
-                            // Get information about the user
-                            UserPrincipal user = UserPrincipal.FindByIdentity(directoryService, result.Principal.FindFirstValue(ClaimTypes.Name));
-
-                            // Attach basic id if requested
-                            if (context.Request.HasScope(Scopes.OpenId))
-                            {
-                                // Add the name identifier claim; this is the user's unique identifier
-                                if (serverOptions.UseDomain)
-                                    identity.AddClaim(Claims.Subject, user.Guid.ToString().ToLower(), Destinations.AccessToken);
-                                else
-                                    identity.AddClaim(Claims.Subject, user.Sid.ToString(), Destinations.AccessToken);
-                            }
-
-                            // Attach email address if requested
-                            if (context.Request.HasScope(Scopes.Email))
-                            {
-                                // Add the user's email address
-                                if (user.EmailAddress != null)
-                                {
-                                    identity.AddClaim(Claims.Email, user.EmailAddress, Destinations.IdentityToken);
-                                    identity.AddClaim(new Claim(Claims.EmailVerified, "true", ClaimValueTypes.Boolean).SetDestinations(Destinations.IdentityToken));
-                                }
-                            }
-
-                            // Attach profile stuff if requested
-                            if (context.Request.HasScope(Scopes.Profile))
-                            {
-                                // Add the account's friendly name
-                                identity.AddClaim(Claims.Name, user.DisplayName, Destinations.IdentityToken);
-
-                                // Add the user name
-                                identity.AddClaim(Claims.Username, user.Name, Destinations.AccessToken, Destinations.IdentityToken);
-
-                                // Add the user's windows username
-                                string netbiosUserName = user.Sid.Translate(typeof(NTAccount)).ToString();
-                                identity.AddClaim(Claims.PreferredUsername, netbiosUserName, Destinations.AccessToken, Destinations.IdentityToken);
-
-                                // Add the employee id number
-                                if (user.EmployeeId != null) { identity.AddClaim("employee_id", user.EmployeeId, Destinations.AccessToken, Destinations.IdentityToken); }
-
-                                // Add the user's name
-                                if (user.GivenName != null) { identity.AddClaim(Claims.GivenName, user.GivenName, Destinations.IdentityToken); }
-                                if (user.Surname != null) { identity.AddClaim(Claims.FamilyName, user.Surname, Destinations.IdentityToken); }
-                            }
-
-                            // Attach phone number if requested
-                            if (context.Request.HasScope(Scopes.Phone))
-                            {
-                                // Telephone 
-                                if (user.VoiceTelephoneNumber != null)
-                                {
-                                    identity.AddClaim(Claims.PhoneNumber, user.VoiceTelephoneNumber, Destinations.IdentityToken);
-                                    identity.AddClaim(new Claim(Claims.PhoneNumberVerified, "true", ClaimValueTypes.Boolean).SetDestinations(Destinations.IdentityToken));
-                                }
-                            }
-
-                            // Attach roles if requested
-                            if (context.Request.HasScope(Scopes.Roles))
-                            {
-                                // Get and assign the group claims
-                                foreach (Principal group in user.GetGroups())
-                                {
-                                    if (group.Name != null)
-                                    {
-                                        identity.AddClaim(Claims.Role, group.Name, Destinations.IdentityToken);
-                                    }
-                                }
-                            }
-
-                            // Attach the principal to the authorization context, so that an OpenID Connect response
-                            // with an authorization code can be generated by the OpenIddict server services.
-                            context.Principal = new ClaimsPrincipal(identity);
-                        }
-                        else
+                        if (!(result?.Principal is WindowsPrincipal wp))
                         {
                             // Run Windows authentication
                             await request.HttpContext.ChallengeAsync("Windows");
                             context.HandleRequest();
+                            return;
                         }
+
+                        // If we're authenticated using Windows authentication, build an Identity with Claims;
+                        ClaimsIdentity identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType);
+
+                        // Set the directory service to the active directory domain or machine 
+                        using PrincipalContext directoryService = ServerOptions.UseDomain
+                            ? new PrincipalContext(ContextType.Domain, ServerOptions.Domain)
+                            : new PrincipalContext(ContextType.Machine);
+
+                        // Get information about the user
+                        UserPrincipal user = UserPrincipal.FindByIdentity(directoryService, result.Principal.FindFirstValue(ClaimTypes.Name));
+
+                        if (user == null)
+                        {
+                            context.Reject(error: Errors.InvalidGrant, description: "User is not found.");
+                            return;
+                        }
+
+                        // Attach basic id if requested
+                        if (context.Request.HasScope(Scopes.OpenId))
+                        {
+                            // Add the name identifier claim; this is the user's unique identifier
+                            string subject = ServerOptions.UseDomain
+                                ? user.Guid.ToString()
+                                : user.Sid.Value;
+                            identity.AddClaim(Claims.Subject, subject, Destinations.AccessToken);
+                        }
+
+                        // Attach email address if requested
+                        if (context.Request.HasScope(Scopes.Email))
+                        {
+                            // Add the user's email address
+                            if (user.EmailAddress != null)
+                            {
+                                identity.AddClaim(Claims.Email, user.EmailAddress, Destinations.IdentityToken);
+                                identity.AddClaim(new Claim(Claims.EmailVerified, "true", ClaimValueTypes.Boolean).SetDestinations(Destinations.IdentityToken));
+                            }
+                        }
+
+                        // Attach profile stuff if requested
+                        if (context.Request.HasScope(Scopes.Profile))
+                        {
+                            // Add the account's friendly name
+                            identity.AddClaim(Claims.Name, user.DisplayName, Destinations.IdentityToken);
+
+                            // Add the user name
+                            identity.AddClaim(Claims.Username, user.Name, Destinations.AccessToken, Destinations.IdentityToken);
+
+                            // Add the user's windows username
+                            string ntUsername = user.Sid.Translate(typeof(NTAccount)).Value;
+                            identity.AddClaim(Claims.PreferredUsername, ntUsername, Destinations.AccessToken, Destinations.IdentityToken);
+
+                            // Add the employee id number
+                            if (user.EmployeeId != null) { identity.AddClaim("employee_id", user.EmployeeId, Destinations.AccessToken, Destinations.IdentityToken); }
+
+                            // Add the user's name
+                            if (user.GivenName != null) { identity.AddClaim(Claims.GivenName, user.GivenName, Destinations.IdentityToken); }
+                            if (user.Surname != null) { identity.AddClaim(Claims.FamilyName, user.Surname, Destinations.IdentityToken); }
+                        }
+
+                        // Attach phone number if requested
+                        if (context.Request.HasScope(Scopes.Phone))
+                        {
+                            // Telephone 
+                            if (user.VoiceTelephoneNumber != null)
+                            {
+                                identity.AddClaim(Claims.PhoneNumber, user.VoiceTelephoneNumber, Destinations.IdentityToken);
+                                identity.AddClaim(new Claim(Claims.PhoneNumberVerified, "true", ClaimValueTypes.Boolean).SetDestinations(Destinations.IdentityToken));
+                            }
+                        }
+
+                        // Attach roles if requested
+                        if (context.Request.HasScope(Scopes.Roles))
+                        {
+                            // Get and assign the group claims
+                            foreach (Principal group in user.GetGroups())
+                            {
+                                if (group.Name != null)
+                                {
+                                    identity.AddClaim(Claims.Role, group.Name, Destinations.IdentityToken);
+                                }
+                            }
+                        }
+
+                        // Attach the principal to the authorization context, so that an OpenID Connect response
+                        // with an authorization code can be generated by the OpenIddict server services.
+                        context.Principal = new ClaimsPrincipal(identity);
                     }));
             })
             .AddValidation(options =>
@@ -206,8 +212,7 @@ namespace WinOpenID
             // Configure CORS
             app.UseCors(builder =>
             {
-                var serverOptions = Configuration.GetSection(ServerOptions.Server).Get<ServerOptions>();
-                builder.WithOrigins(serverOptions.AllowerOrigins);
+                builder.WithOrigins(ServerOptions.AllowedOrigins);
                 builder.AllowAnyMethod();
                 builder.AllowAnyHeader();
             });

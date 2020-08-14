@@ -7,9 +7,19 @@ namespace WinOpenID
     {
         public const string Server = nameof(Server);
 
-        public string[] AllowedHosts { get; set; } = Array.Empty<string>();
+        private string[] allowedHosts = Array.Empty<string>();
+        public string[] AllowedHosts
+        {
+            get => allowedHosts;
+            set
+            {
+                var hosts = value ?? Array.Empty<string>();
+                AllowedOrigins = hosts.Select(x => new Uri(x).GetLeftPart(UriPartial.Authority)).ToArray() ?? Array.Empty<string>();
+                allowedHosts = hosts;
+            }
+        }
 
-        public string[] AllowerOrigins => AllowedHosts?.Select(x => new Uri(x).GetLeftPart(UriPartial.Authority)).ToArray();
+        public string[] AllowedOrigins { get; private set; } = Array.Empty<string>();
 
         public string Domain { get; set; }
 
