@@ -61,6 +61,15 @@ namespace WinOpenID
                     Claims.Role, "employee_id"
                 );
 
+
+                // Event handler for validating token requests
+                options.AddEventHandler<ValidateTokenRequestContext>(builder =>
+                    builder.UseInlineHandler(context =>
+                    {
+                        // I accept all context.ClientId's, so just carry on.
+                        return default;
+                    }));
+
                 // Event handler for validating authorization requests
                 options.AddEventHandler<ValidateAuthorizationRequestContext>(builder =>
                     builder.UseInlineHandler(context =>
@@ -76,14 +85,6 @@ namespace WinOpenID
 
                         // Fall-through: URL was not proper.
                         context.Reject(error: Errors.InvalidClient, description: "The specified 'redirect_uri' is not valid for this client application.");
-                        return default;
-                    }));
-
-                // Event handler for validating token requests
-                options.AddEventHandler<ValidateTokenRequestContext>(builder =>
-                    builder.UseInlineHandler(context =>
-                    {
-                        // I accept all context.ClientId's, so just carry on.
                         return default;
                     }));
 
