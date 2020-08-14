@@ -206,8 +206,7 @@ namespace WinOpenID
             app.UseCors(builder =>
             {
                 var serverOptions = Configuration.GetSection(ServerOptions.Server).Get<ServerOptions>();
-                var origins = serverOptions.AllowedHosts.Select(x => new Uri(x).GetLeftPart(UriPartial.Authority)).ToArray();
-                builder.WithOrigins(origins);
+                builder.WithOrigins(serverOptions.AllowerOrigins);
                 builder.AllowAnyMethod();
                 builder.AllowAnyHeader();
             });
