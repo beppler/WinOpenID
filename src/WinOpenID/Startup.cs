@@ -103,7 +103,7 @@ namespace WinOpenID
                             ClaimsIdentity identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType);
 
                             // Set the directory service to the active directory domain or machine 
-                            PrincipalContext directoryService = serverOptions.UseDomain
+                            using PrincipalContext directoryService = serverOptions.UseDomain
                                 ? new PrincipalContext(ContextType.Domain, serverOptions.Domain)
                                 : new PrincipalContext(ContextType.Machine);
 
