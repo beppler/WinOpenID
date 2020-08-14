@@ -1,8 +1,3 @@
-using System;
-using System.DirectoryServices.AccountManagement;
-using System.Linq;
-using System.Security.Claims;
-using System.Security.Principal;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -13,6 +8,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
+using System;
+using System.DirectoryServices.AccountManagement;
+using System.Security.Claims;
+using System.Security.Principal;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 using static OpenIddict.Server.OpenIddictServerEvents;
 
