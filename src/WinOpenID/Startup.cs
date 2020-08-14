@@ -43,24 +43,23 @@ namespace WinOpenID
             // Attach OpenIddict with a ton of options
             services.AddOpenIddict().AddServer(options =>
             {
+                options.UseAspNetCore()
+                    .DisableTransportSecurityRequirement(); // Disable the need for HTTPS in dev
+                options.EnableDegradedMode(); // We'll handle protocol stuff ourselves; don't want user stores or such
                 // This OpenIddict server is stateless; however, make sure IIS doesn't dispose of the application too often (ie, via app pool recycles or shut downs due to inactivity)
                 options.AddEphemeralSigningKey().AddEphemeralEncryptionKey();
                 if (!ServerOptions.EncryptAccessToken)
                     options.DisableAccessTokenEncryption();
-                options.AllowAuthorizationCodeFlow();
-                options.AllowImplicitFlow();
+                options.AllowAuthorizationCodeFlow()
+                       .AllowImplicitFlow();
                 options.SetAuthorizationEndpointUris("/connect/authorize")
                        .SetTokenEndpointUris("/connect/token");
-                options.EnableDegradedMode(); // We'll handle protocol stuff ourselves; don't want user stores or such
-                options.UseAspNetCore()
-                    .DisableTransportSecurityRequirement(); // Disable the need for HTTPS in dev
                 options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles); // Tell OpenIddict that we support these scopes
                 options.RegisterClaims(
                     Claims.Name, Claims.PreferredUsername, Claims.Email, Claims.GivenName, Claims.FamilyName,
                     Claims.EmailVerified, Claims.PhoneNumber, Claims.PhoneNumberVerified,
                     Claims.Role, "employee_id"
                 );
-
 
                 // Event handler for validating token requests
                 options.AddEventHandler<ValidateTokenRequestContext>(builder =>
