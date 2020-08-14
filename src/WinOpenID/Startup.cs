@@ -27,7 +27,8 @@ namespace WinOpenID
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
-            ServerOptions = Configuration.GetSection(ServerOptions.Server).Get<ServerOptions>();
+            ServerOptions = new ServerOptions();
+            Configuration.GetSection(ServerOptions.Server).Bind(ServerOptions);
         }
 
         // This method gets called by the runtime. Use this method to add services to the container.
