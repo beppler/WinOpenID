@@ -152,6 +152,7 @@ namespace WinOpenID
                                 if (user.Surname != null) { identity.AddClaim(Claims.FamilyName, user.Surname, Destinations.IdentityToken); }
                             }
 
+                            // Attach phone number if requested
                             if (context.Request.HasScope(Scopes.Phone))
                             {
                                 // Telephone 
