@@ -1,14 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.DirectoryServices.AccountManagement;
+using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
@@ -21,26 +22,32 @@ namespace WinOpenID
     // Source: https://github.com/auroris/OpenIddict-WindowsAuth
     public class Startup
     {
-        /// <summary>
-        /// List of hosts allowed to deal with this OpenIDConnect Server
-        /// </summary>
-        public List<string> allowedHosts = new List<string> { "https://localhost", "https://intranet.mps.com.br", "https://oidcdebugger.com" };
+        public IConfiguration Configuration { get; }
+
+        public Startup(IConfiguration configuration)
+        {
+            Configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        }
 
         // This method gets called by the runtime. Use this method to add services to the container.
         // For more information on how to configure your application, visit https://go.microsoft.com/fwlink/?LinkID=398940
         public void ConfigureServices(IServiceCollection services)
         {
+
             // Add cross-origin resource sharing for Javascript clients
             services.AddCors();
 
             services.AddAuthentication();
+
+            var serverOptions = Configuration.GetSection(ServerOptions.Server).Get<ServerOptions>();
 
             // Attach OpenIddict with a ton of options
             services.AddOpenIddict().AddServer(options =>
             {
                 // This OpenIddict server is stateless; however, make sure IIS doesn't dispose of the application too often (ie, via app pool recycles or shut downs due to inactivity)
                 options.AddEphemeralSigningKey().AddEphemeralEncryptionKey();
-                options.DisableAccessTokenEncryption();
+                if (!serverOptions.EncryptAccessToken)
+                    options.DisableAccessTokenEncryption();
                 options.AllowAuthorizationCodeFlow();
                 options.AllowImplicitFlow();
                 options.SetAuthorizationEndpointUris("/connect/authorize")
@@ -60,7 +67,7 @@ namespace WinOpenID
                     builder.UseInlineHandler(context =>
                     {
                         // Verification: I accept all context.ClientId's, but do check to see if the context.RedirectUri is proper
-                        foreach (string host in allowedHosts)
+                        foreach (string host in serverOptions.AllowedHosts)
                         {
                             if (context.RedirectUri.StartsWith(host, StringComparison.InvariantCultureIgnoreCase))
                             {
@@ -93,18 +100,12 @@ namespace WinOpenID
 
                         if (result?.Principal is WindowsPrincipal wp) // If we're authenticated using Windows authentication, build an Identity with Claims;
                         {
-                            PrincipalContext directoryService;
                             ClaimsIdentity identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType);
 
-                            // Set the directory service to the active directory domain preferrably; but the machine is okay too for dev if we're not connected to AD
-                            try
-                            {
-                                directoryService = new PrincipalContext(ContextType.Domain);
-                            }
-                            catch (Exception)
-                            {
-                                directoryService = new PrincipalContext(ContextType.Machine);
-                            }
+                            // Set the directory service to the active directory domain or machine 
+                            PrincipalContext directoryService = serverOptions.UseDomain
+                                ? new PrincipalContext(ContextType.Domain, serverOptions.Domain)
+                                : new PrincipalContext(ContextType.Machine);
 
                             // Get information about the user
                             UserPrincipal user = UserPrincipal.FindByIdentity(directoryService, result.Principal.FindFirstValue(ClaimTypes.Name));
@@ -113,7 +114,10 @@ namespace WinOpenID
                             if (context.Request.HasScope(Scopes.OpenId))
                             {
                                 // Add the name identifier claim; this is the user's unique identifier
-                                identity.AddClaim(Claims.Subject, user.Guid.ToString().ToLower(), Destinations.AccessToken);
+                                if (serverOptions.UseDomain)
+                                    identity.AddClaim(Claims.Subject, user.Guid.ToString().ToLower(), Destinations.AccessToken);
+                                else
+                                    identity.AddClaim(Claims.Subject, user.Sid.ToString().ToLower(), Destinations.AccessToken);
                             }
 
                             // Attach email address if requested
@@ -133,19 +137,26 @@ namespace WinOpenID
                                 // Add the account's friendly name
                                 identity.AddClaim(Claims.Name, user.DisplayName, Destinations.IdentityToken);
 
+                                // Add the user name
+                                identity.AddClaim(Claims.Username, user.Name, Destinations.AccessToken, Destinations.IdentityToken);
+
                                 // Add the user's windows username
                                 string netbiosUserName = user.Sid.Translate(typeof(NTAccount)).ToString();
                                 identity.AddClaim(Claims.PreferredUsername, netbiosUserName, Destinations.AccessToken, Destinations.IdentityToken);
 
+                                // Add the employee id number
+                                if (user.EmployeeId != null) { identity.AddClaim("employee_id", user.EmployeeId, Destinations.AccessToken, Destinations.IdentityToken); }
+
                                 // Add the user's name
                                 if (user.GivenName != null) { identity.AddClaim(Claims.GivenName, user.GivenName, Destinations.IdentityToken); }
                                 if (user.Surname != null) { identity.AddClaim(Claims.FamilyName, user.Surname, Destinations.IdentityToken); }
+                            }
 
-                                if (user.EmployeeId != null) { identity.AddClaim("employee_id", user.EmployeeId, Destinations.IdentityToken); }
-
+                            if (context.Request.HasScope(Scopes.Phone))
+                            {
                                 // Telephone 
-                                if (user.VoiceTelephoneNumber != null) 
-                                { 
+                                if (user.VoiceTelephoneNumber != null)
+                                {
                                     identity.AddClaim(Claims.PhoneNumber, user.VoiceTelephoneNumber, Destinations.IdentityToken);
                                     identity.AddClaim(new Claim(Claims.PhoneNumberVerified, "true", ClaimValueTypes.Boolean).SetDestinations(Destinations.IdentityToken));
                                 }
@@ -194,7 +205,9 @@ namespace WinOpenID
             // Configure CORS
             app.UseCors(builder =>
             {
-                builder.WithOrigins(allowedHosts.ToArray());
+                var serverOptions = Configuration.GetSection(ServerOptions.Server).Get<ServerOptions>();
+                var origins = serverOptions.AllowedHosts.Select(x => new Uri(x).GetLeftPart(UriPartial.Authority)).ToArray();
+                builder.WithOrigins(origins);
                 builder.AllowAnyMethod();
                 builder.AllowAnyHeader();
             });
@@ -207,7 +220,7 @@ namespace WinOpenID
                 endpoints.MapGet("/", async context =>
                 {
                     context.Response.ContentType = "text/html";
-                    await context.Response.WriteAsync("Authorization Server <a href=\".well-known/openid-configuration\">(Configuration)</a>");
+                    await context.Response.WriteAsync("Windows Authorization Server <a href=\".well-known/openid-configuration\">(Configuration)</a>");
                 });
             });
         }
