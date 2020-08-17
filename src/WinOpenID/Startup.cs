@@ -56,9 +56,9 @@ namespace WinOpenID
                        .SetTokenEndpointUris("/connect/token");
                 options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles); // Tell OpenIddict that we support these scopes
                 options.RegisterClaims(
-                    Claims.Name, Claims.PreferredUsername, Claims.Email, Claims.GivenName, Claims.FamilyName,
+                    Claims.Name, Claims.Username, "ad_username", Claims.Email, Claims.GivenName, Claims.FamilyName,
                     Claims.EmailVerified, Claims.PhoneNumber, Claims.PhoneNumberVerified,
-                    Claims.Role, "ldap_employee_id"
+                    Claims.Role, "ad_employee_id"
                 );
 
                 // Event handler for validating token requests
@@ -154,10 +154,10 @@ namespace WinOpenID
 
                             // Add the user's windows username
                             string ntUsername = user.Sid.Translate(typeof(NTAccount)).Value;
-                            identity.AddClaim(Claims.PreferredUsername, ntUsername, Destinations.AccessToken, Destinations.IdentityToken);
+                            identity.AddClaim("ad_username", ntUsername, Destinations.AccessToken, Destinations.IdentityToken);
 
                             // Add the employee id number
-                            if (user.EmployeeId != null) { identity.AddClaim("ldap_employee_id", user.EmployeeId, Destinations.AccessToken, Destinations.IdentityToken); }
+                            if (user.EmployeeId != null) { identity.AddClaim("ad_employee_id", user.EmployeeId, Destinations.AccessToken, Destinations.IdentityToken); }
 
                             // Add the user's name
                             if (user.GivenName != null) { identity.AddClaim(Claims.GivenName, user.GivenName, Destinations.IdentityToken); }
