@@ -50,8 +50,7 @@ namespace WinOpenID
                 options.AddEphemeralSigningKey().AddEphemeralEncryptionKey();
                 if (!ServerOptions.EncryptAccessToken)
                     options.DisableAccessTokenEncryption();
-                options.AllowAuthorizationCodeFlow()
-                       .AllowImplicitFlow();
+                options.AllowAuthorizationCodeFlow();
                 options.SetAuthorizationEndpointUris("/connect/authorize")
                        .SetTokenEndpointUris("/connect/token");
                 options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles); // Tell OpenIddict that we support these scopes
