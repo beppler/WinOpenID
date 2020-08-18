@@ -44,15 +44,22 @@ namespace WinOpenID
             services.AddOpenIddict().AddServer(options =>
             {
                 options.UseAspNetCore()
-                    .DisableTransportSecurityRequirement(); // Disable the need for HTTPS in dev
+                       .DisableTransportSecurityRequirement(); // Disable the need for HTTPS in dev
+
                 options.EnableDegradedMode(); // We'll handle protocol stuff ourselves; don't want user stores or such
+
                 // This OpenIddict server is stateless; however, make sure IIS doesn't dispose of the application too often (ie, via app pool recycles or shut downs due to inactivity)
-                options.AddEphemeralSigningKey().AddEphemeralEncryptionKey();
+                options.AddEphemeralSigningKey()
+                       .AddEphemeralEncryptionKey();
                 if (!ServerOptions.EncryptAccessToken)
                     options.DisableAccessTokenEncryption();
-                options.AllowAuthorizationCodeFlow();
+
                 options.SetAuthorizationEndpointUris("/connect/authorize")
                        .SetTokenEndpointUris("/connect/token");
+
+                options.AllowAuthorizationCodeFlow()
+                       .AllowImplicitFlow();
+
                 options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles); // Tell OpenIddict that we support these scopes
                 options.RegisterClaims(
                     Claims.Name, Claims.Username, "ad_username", Claims.Email, Claims.GivenName, Claims.FamilyName,
