@@ -62,9 +62,9 @@ namespace WinOpenID
 
                 options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles); // Tell OpenIddict that we support these scopes
                 options.RegisterClaims(
-                    Claims.Name, Claims.Username, "ad_username", Claims.Email, Claims.GivenName, Claims.FamilyName,
-                    Claims.EmailVerified, Claims.PhoneNumber, Claims.PhoneNumberVerified,
-                    Claims.Role, "ad_employee_id"
+                    Claims.Name, Claims.Username, Claims.PreferredUsername, "uniquename", Claims.GivenName, Claims.FamilyName,
+                    Claims.Email, Claims.EmailVerified, Claims.PhoneNumber, Claims.PhoneNumberVerified,
+                    "employee_id", Claims.Role
                 );
 
                 // Event handler for validating token requests
@@ -158,16 +158,19 @@ namespace WinOpenID
                             // Add the user name
                             identity.AddClaim(Claims.Username, user.Name, Destinations.AccessToken, Destinations.IdentityToken);
 
-                            // Add the user's windows username
-                            string ntUsername = user.Sid.Translate(typeof(NTAccount)).Value;
-                            identity.AddClaim("ad_username", ntUsername, Destinations.AccessToken, Destinations.IdentityToken);
+                            // Add the user name
+                            identity.AddClaim(Claims.PreferredUsername, user.Name, Destinations.AccessToken, Destinations.IdentityToken);
 
-                            // Add the employee id number
-                            if (user.EmployeeId != null) { identity.AddClaim("ad_employee_id", user.EmployeeId, Destinations.AccessToken, Destinations.IdentityToken); }
+                            // Add the user's windows username (uniquename)
+                            string uniqueName = user.Sid.Translate(typeof(NTAccount)).Value;
+                            identity.AddClaim("uniquename", uniqueName, Destinations.AccessToken, Destinations.IdentityToken);
 
                             // Add the user's name
                             if (user.GivenName != null) { identity.AddClaim(Claims.GivenName, user.GivenName, Destinations.IdentityToken); }
                             if (user.Surname != null) { identity.AddClaim(Claims.FamilyName, user.Surname, Destinations.IdentityToken); }
+
+                            // Add the employee id number
+                            if (user.EmployeeId != null) { identity.AddClaim("employee_id", user.EmployeeId, Destinations.AccessToken, Destinations.IdentityToken); }
                         }
 
                         // Attach phone number if requested
