@@ -38,8 +38,6 @@ namespace WinOpenID
             // Add cross-origin resource sharing for Javascript clients
             services.AddCors();
 
-            services.AddAuthentication();
-
             // Attach OpenIddict with a ton of options
             services.AddOpenIddict().AddServer(options =>
             {
@@ -51,6 +49,7 @@ namespace WinOpenID
                 // This OpenIddict server is stateless; however, make sure IIS doesn't dispose of the application too often (ie, via app pool recycles or shut downs due to inactivity)
                 options.AddEphemeralSigningKey()
                        .AddEphemeralEncryptionKey();
+
                 if (!ServerOptions.EncryptAccessToken)
                     options.DisableAccessTokenEncryption();
 
@@ -64,16 +63,13 @@ namespace WinOpenID
                 options.RegisterClaims(
                     Claims.Name, Claims.Username, Claims.PreferredUsername, "uniquename", Claims.GivenName, Claims.FamilyName,
                     Claims.Email, Claims.EmailVerified, Claims.PhoneNumber, Claims.PhoneNumberVerified,
-                    "employee_id", Claims.Role
+                    Claims.Role, "employee_id"
                 );
 
                 // Event handler for validating token requests
                 options.AddEventHandler<ValidateTokenRequestContext>(builder =>
-                    builder.UseInlineHandler(context =>
-                    {
-                        // I accept all context.ClientId's, so just carry on.
-                        return default;
-                    }));
+                    builder.UseInlineHandler(context => default) // I accept all context.ClientId's, so just carry on.
+                );
 
                 // Event handler for validating authorization requests
                 options.AddEventHandler<ValidateAuthorizationRequestContext>(builder =>
@@ -98,11 +94,15 @@ namespace WinOpenID
                     builder.UseInlineHandler(async context =>
                     {
                         // Get the HTTP request
-                        HttpRequest request = context.Transaction.GetHttpRequest() ?? throw new InvalidOperationException("The ASP.NET Core request cannot be retrieved.");
+                        HttpRequest request = context.Transaction.GetHttpRequest();
+                        if (request == null)
+                        {
+                            context.Reject(error: Errors.ServerError, "The ASP.NET Core request cannot be retrieved.");
+                            return;
+                        }
 
                         // Try to get the authentication of the current session via Windows Authentication
                         AuthenticateResult result = await request.HttpContext.AuthenticateAsync("Windows");
-
                         if (!(result?.Principal is WindowsPrincipal wp))
                         {
                             // Run Windows authentication
@@ -226,6 +226,7 @@ namespace WinOpenID
             });
 
             app.UseRouting();
+
             app.UseAuthentication();
 
             app.UseEndpoints(endpoints =>
