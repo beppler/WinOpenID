@@ -103,7 +103,7 @@ namespace WinOpenID
 
                         // Try to get the authentication of the current session via Windows Authentication
                         AuthenticateResult result = await request.HttpContext.AuthenticateAsync("Windows");
-                        if (!(result?.Principal is WindowsPrincipal wp))
+                        if (result?.Principal is not WindowsPrincipal)
                         {
                             // Run Windows authentication
                             await request.HttpContext.ChallengeAsync("Windows");
