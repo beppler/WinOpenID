@@ -6,10 +6,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication" Version="2.2.0" />
-    <PackageReference Include="OpenIddict.Server.AspNetCore" Version="3.0.0-beta5.20503.76" />
-    <PackageReference Include="OpenIddict.Validation.AspNetCore" Version="3.0.0-beta5.20503.76" />
-    <PackageReference Include="OpenIddict.Validation.ServerIntegration" Version="3.0.0-beta5.20503.76" />
-    <PackageReference Include="System.DirectoryServices.AccountManagement" Version="4.7.0" />
+    <PackageReference Include="OpenIddict.Server.AspNetCore" Version="3.0.0" />
+    <PackageReference Include="OpenIddict.Validation.AspNetCore" Version="3.0.0" />
+    <PackageReference Include="OpenIddict.Validation.ServerIntegration" Version="3.0.0" />
+    <PackageReference Include="System.DirectoryServices.AccountManagement" Version="5.0.0" />
   </ItemGroup>
 
   <ItemGroup>
