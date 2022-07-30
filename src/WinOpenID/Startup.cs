@@ -97,7 +97,7 @@ namespace WinOpenID
                         HttpRequest request = context.Transaction.GetHttpRequest();
                         if (request == null)
                         {
-                            context.Reject(error: Errors.ServerError, "The ASP.NET Core request cannot be retrieved.");
+                            context.Reject(error: Errors.ServerError, "Request information cannot be retrieved.");
                             return;
                         }
 
