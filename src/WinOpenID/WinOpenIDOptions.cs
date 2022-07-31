@@ -11,7 +11,7 @@ public class WinOpenIDOptions
         set
         {
             var hosts = value ?? Array.Empty<string>();
-            AllowedOrigins = hosts.Select(x => new Uri(x).GetLeftPart(UriPartial.Authority)).ToArray() ?? Array.Empty<string>();
+            AllowedOrigins = hosts.Select(x => new Uri(x).GetLeftPart(UriPartial.Authority)).ToArray();
             allowedHosts = hosts;
         }
     }
