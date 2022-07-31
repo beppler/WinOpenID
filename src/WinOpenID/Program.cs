@@ -1,26 +1,26 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using WinOpenID;
 
-namespace WinOpenID
-{
-    public class Program
-    {
-        public static void Main(string[] args)
-        {
-            CreateHostBuilder(args).Build().Run();
-        }
+var builder = WebApplication.CreateBuilder(args);
 
-        public static IHostBuilder CreateHostBuilder(string[] args) =>
-            Host.CreateDefaultBuilder(args)
-                .ConfigureWebHostDefaults(webBuilder =>
-                {
-                    webBuilder.UseStartup<Startup>();
-                });
-    }
-}
+var serverOptions = builder.Configuration.GetSection(WinOpenIDOptions.Server).Get<WinOpenIDOptions>();
+
+builder.Services.AddWinOpenId(serverOptions);
+
+var app = builder.Build();
+
+// Configure CORS
+app.UseCors(builder => builder.WithOrigins(serverOptions.AllowedOrigins).AllowAnyMethod().AllowAnyHeader());
+
+app.UseRouting();
+
+app.UseAuthentication();
+
+app.MapGet("/", () => Results.Extensions.Html(@"<!doctype html>
+<html>
+    <head><title>WinOpenID</title></head>
+    <body>
+        <p>Windows Authorization Server <a href='.well-known/openid-configuration\'>(Configuration)</a></p>
+    </body>
+</html>"));
+
+app.Run();
