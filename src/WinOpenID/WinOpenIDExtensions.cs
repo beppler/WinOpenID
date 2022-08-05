@@ -117,7 +117,7 @@ public static class WinOpenIDExtensions
                         string subject = serverOptions.UseDomain
                             ? user.Guid.ToString()
                             : user.Sid.Value;
-                        identity.AddClaim(Claims.Subject, subject, Destinations.AccessToken);
+                        identity.AddClaim(Claims.Subject, subject, Destinations.AccessToken, Destinations.IdentityToken);
                     }
 
                     // Attach email address if requested

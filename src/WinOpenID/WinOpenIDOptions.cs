@@ -20,7 +20,7 @@ public class WinOpenIDOptions
 
     public string Domain { get; set; }
 
-    public bool UseDomain => !string.IsNullOrWhiteSpace(Domain);
-
     public bool EncryptAccessToken { get; set; }
+
+    public bool UseDomain => !string.IsNullOrWhiteSpace(Domain);
 }
