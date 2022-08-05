@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using System.DirectoryServices.AccountManagement;
@@ -39,7 +40,10 @@ public static class WinOpenIDExtensions
             options.AllowAuthorizationCodeFlow()
                    .AllowImplicitFlow();
 
-            options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles); // Tell OpenIddict that we support these scopes
+            // Tell OpenIddict that we support these scopes
+            options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles);
+
+            // Tell OpenIddict that we support these claims
             options.RegisterClaims(
                 Claims.Name, Claims.Username, Claims.PreferredUsername, "uniquename", Claims.GivenName, Claims.FamilyName,
                 Claims.Email, Claims.EmailVerified, Claims.PhoneNumber, Claims.PhoneNumberVerified, Claims.Role, EmployeeId
@@ -81,11 +85,11 @@ public static class WinOpenIDExtensions
                     }
 
                     // Try to get the authentication of the current session via Windows Authentication
-                    AuthenticateResult result = await request.HttpContext.AuthenticateAsync("Windows");
+                    AuthenticateResult result = await request.HttpContext.AuthenticateAsync(NegotiateDefaults.AuthenticationScheme);
                     if (result?.Principal is not WindowsPrincipal)
                     {
                         // Run Windows authentication
-                        await request.HttpContext.ChallengeAsync("Windows");
+                        await request.HttpContext.ChallengeAsync(NegotiateDefaults.AuthenticationScheme);
                         context.HandleRequest();
                         return;
                     }

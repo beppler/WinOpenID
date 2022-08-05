@@ -1,6 +1,9 @@
+using Microsoft.AspNetCore.Authentication.Negotiate;
 using WinOpenID;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme).AddNegotiate();
 
 var serverOptions = builder.Configuration.GetSection(WinOpenIDOptions.Server).Get<WinOpenIDOptions>();
 
