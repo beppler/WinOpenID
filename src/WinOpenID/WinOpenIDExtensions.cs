@@ -14,8 +14,6 @@ namespace WinOpenID;
 // Based on: https://github.com/auroris/OpenIddict-WindowsAuth
 public static class WinOpenIDExtensions
 {
-    private const string EmployeeId = "employee_id";
-
     public static IServiceCollection AddWinOpenId(this IServiceCollection services, WinOpenIDOptions serverOptions)
     {
         services.AddCors();
@@ -45,8 +43,9 @@ public static class WinOpenIDExtensions
 
             // Tell OpenIddict that we support these claims
             options.RegisterClaims(
-                Claims.Name, Claims.Username, Claims.PreferredUsername, "uniquename", Claims.GivenName, Claims.FamilyName,
-                Claims.Email, Claims.EmailVerified, Claims.PhoneNumber, Claims.PhoneNumberVerified, Claims.Role, EmployeeId
+                Claims.Name, Claims.Username, Claims.PreferredUsername, Claims.GivenName, Claims.FamilyName,
+                Claims.Email, Claims.EmailVerified, Claims.PhoneNumber, Claims.PhoneNumberVerified, Claims.Role,
+                WinOpenIDClaims.EmployeeId, WinOpenIDClaims.UniqueName
             );
 
             // Event handler for validating token requests
@@ -146,14 +145,14 @@ public static class WinOpenIDExtensions
 
                         // Add the user's windows username (uniquename)
                         string uniqueName = user.Sid.Translate(typeof(NTAccount)).Value;
-                        identity.AddClaim("uniquename", uniqueName, Destinations.AccessToken, Destinations.IdentityToken);
+                        identity.AddClaim(WinOpenIDClaims.UniqueName, uniqueName, Destinations.AccessToken, Destinations.IdentityToken);
 
                         // Add the user's name
                         if (user.GivenName != null) { identity.AddClaim(Claims.GivenName, user.GivenName, Destinations.IdentityToken); }
                         if (user.Surname != null) { identity.AddClaim(Claims.FamilyName, user.Surname, Destinations.IdentityToken); }
 
                         // Add the employee id number
-                        if (user.EmployeeId != null) { identity.AddClaim("employee_id", user.EmployeeId, Destinations.AccessToken, Destinations.IdentityToken); }
+                        if (user.EmployeeId != null) { identity.AddClaim(WinOpenIDClaims.EmployeeId, user.EmployeeId, Destinations.AccessToken, Destinations.IdentityToken); }
                     }
 
                     // Attach phone number if requested
