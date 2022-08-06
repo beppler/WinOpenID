@@ -1,18 +1,20 @@
 using Microsoft.AspNetCore.Authentication.Negotiate;
+using Microsoft.Extensions.Options;
 using WinOpenID;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme).AddNegotiate();
 
-var serverOptions = builder.Configuration.GetSection(WinOpenIDOptions.Server).Get<WinOpenIDOptions>();
+builder.Services.AddCors();
 
-builder.Services.AddWinOpenId(serverOptions);
+builder.Services.AddWinOpenId(builder.Configuration);
 
 var app = builder.Build();
 
-// Configure CORS
-app.UseCors(builder => builder.WithOrigins(serverOptions.AllowedOrigins).AllowAnyMethod().AllowAnyHeader());
+var serverOptions = app.Services.GetRequiredService<IOptions<WinOpenIDOptions>>().Value;
+
+app.UseCors(builder => builder.AllowAnyHeader().WithMethods("GET", "POST").WithOrigins(serverOptions.AllowedOrigins));
 
 app.UseRouting();
 
