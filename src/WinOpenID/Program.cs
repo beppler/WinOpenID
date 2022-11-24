@@ -16,15 +16,13 @@ var serverOptions = app.Services.GetRequiredService<IOptions<WinOpenIDOptions>>(
 
 app.UseCors(builder => builder.AllowAnyHeader().WithMethods("GET", "POST").WithOrigins(serverOptions.AllowedOrigins));
 
-app.UseRouting();
-
 app.UseAuthentication();
 
 app.MapGet("/", () => Results.Extensions.Html(@"<!doctype html>
 <html>
     <head><title>WinOpenID</title></head>
     <body>
-        <p>Windows Authorization Server <a href='.well-known/openid-configuration\'>(Configuration)</a></p>
+        <p>Windows Authorization Server <a href='.well-known/openid-configuration/'>(Configuration)</a></p>
     </body>
 </html>"));
 
