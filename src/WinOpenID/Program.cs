@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authentication.Negotiate;
-using Microsoft.Extensions.Options;
 using WinOpenID;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,11 +11,7 @@ builder.Services.AddWinOpenId(builder.Configuration);
 
 var app = builder.Build();
 
-var serverOptions = app.Services.GetRequiredService<IOptions<WinOpenIDOptions>>().Value;
-
-app.UseCors(builder => builder.AllowAnyHeader().WithMethods("GET", "POST").WithOrigins(serverOptions.AllowedOrigins));
-
-app.UseAuthentication();
+app.UseWinOpenID();
 
 app.MapGet("/", () => Results.Redirect(".well-known/openid-configuration/"));
 
