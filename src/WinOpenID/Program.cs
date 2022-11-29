@@ -18,12 +18,6 @@ app.UseCors(builder => builder.AllowAnyHeader().WithMethods("GET", "POST").WithO
 
 app.UseAuthentication();
 
-app.MapGet("/", () => Results.Extensions.Html(@"<!doctype html>
-<html>
-    <head><title>WinOpenID</title></head>
-    <body>
-        <p>Windows Authorization Server <a href='.well-known/openid-configuration/'>(Configuration)</a></p>
-    </body>
-</html>"));
+app.MapGet("/", () => Results.Redirect(".well-known/openid-configuration/"));
 
 app.Run();
