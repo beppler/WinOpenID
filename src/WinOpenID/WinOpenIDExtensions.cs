@@ -74,15 +74,4 @@ public static class WinOpenIDExtensions
 
         return services;
     }
-
-    public static IApplicationBuilder UseWinOpenID(this IApplicationBuilder app)
-    {
-        var serverOptions = app.ApplicationServices.GetRequiredService<IOptions<WinOpenIDOptions>>().Value;
-
-        app.UseCors(builder => builder.AllowAnyHeader().WithMethods("GET", "POST").WithOrigins(serverOptions.GetAllowedCorsOrigins()));
-
-        app.UseAuthentication();
-
-        return app;
-    }
 }
