@@ -26,17 +26,12 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
     // Event handler for validating authorization requests
     ValueTask IOpenIddictServerHandler<ValidateAuthorizationRequestContext>.HandleAsync(ValidateAuthorizationRequestContext context)
     {
-        // get scheme server and path from redirect_uri
-        var redirectUri = new Uri(context.RedirectUri).GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.Unescaped);
-
         // Verification: I accept all context.ClientId's, but do check to see if the context.RedirectUri is proper
-        if (serverOptions.AllowedHosts.Any(host => string.Equals(redirectUri, host, StringComparison.OrdinalIgnoreCase)))
+        if (!serverOptions.IsAllowedRedirectUri(context.RedirectUri))
         {
-            return default;
+            context.Reject(error: Errors.InvalidRequest, description: "The specified 'redirect_uri' is not valid for this client application.");
         }
 
-        // Fall-through: URL was not proper.
-        context.Reject(error: Errors.InvalidClient, description: "The specified 'redirect_uri' is not valid for this client application.");
         return default;
     }
 
@@ -55,6 +50,13 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
         AuthenticateResult result = await request.HttpContext.AuthenticateAsync(NegotiateDefaults.AuthenticationScheme);
         if (result?.Principal is not WindowsPrincipal)
         {
+            // The client asked for a silent login, so don't challenge the user
+            if (context.Request.HasPromptValue(PromptValues.None))
+            {
+                context.Reject(error: Errors.LoginRequired, description: "The user is not logged in.");
+                return;
+            }
+
             // Run Windows authentication
             await request.HttpContext.ChallengeAsync(NegotiateDefaults.AuthenticationScheme);
             context.HandleRequest();
@@ -62,7 +64,7 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
         }
 
         // If we're authenticated using Windows authentication, build an Identity with Claims;
-        ClaimsIdentity identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType);
+        ClaimsIdentity identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType, Claims.Name, Claims.Role);
 
         // Set the directory service to the active directory domain or machine 
         using PrincipalContext directoryService = serverOptions.UseDomain
@@ -74,7 +76,7 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
 
         if (user == null)
         {
-            context.Reject(error: Errors.InvalidGrant, description: "User is not found.");
+            context.Reject(error: Errors.AccessDenied, description: "User is not found.");
             return;
         }
 
@@ -135,20 +137,14 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
         principal.SetScopes(context.Request.GetScopes());
         principal.SetDestinations(static claim => claim.Type switch
         {
-            // If the "profile" scope was granted, allow the "name" claim to be
-            // added to the access and identity tokens derived from the principal.
-            Claims.Name when claim.Subject.HasScope(Scopes.Profile) =>
-            [
-                Destinations.AccessToken,
-                Destinations.IdentityToken
-            ],
-
             Claims.Email or Claims.EmailVerified when claim.Subject.HasScope(Scopes.Email) =>
             [
                 Destinations.AccessToken,
                 Destinations.IdentityToken
             ],
 
+            // If the "profile" scope was granted, allow the profile claims to be
+            // added to the access and identity tokens derived from the principal.
             Claims.Name or Claims.Username or Claims.PreferredUsername
             or Claims.GivenName or Claims.FamilyName 
             or WinOpenIDClaims.UniqueName or WinOpenIDClaims.EmployeeId 
@@ -181,6 +177,19 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
     // Event handler for validating token requests
     ValueTask IOpenIddictServerHandler<ValidateTokenRequestContext>.HandleAsync(ValidateTokenRequestContext context)
     {
-        return default; // I accept all context.ClientId's, so just carry on.
+        // I accept all context.ClientId's, but only the authorization code grant is supported
+        if (!context.Request.IsAuthorizationCodeGrantType())
+        {
+            context.Reject(error: Errors.UnsupportedGrantType, description: "The specified 'grant_type' is not supported.");
+            return default;
+        }
+
+        // Defense in depth: OpenIddict already binds the code to its redirect_uri, but check the whitelist again
+        if (context.Request.RedirectUri != null && !serverOptions.IsAllowedRedirectUri(context.Request.RedirectUri))
+        {
+            context.Reject(error: Errors.InvalidGrant, description: "The specified 'redirect_uri' is not valid for this client application.");
+        }
+
+        return default;
     }
 }

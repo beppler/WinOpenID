@@ -1,11 +1,12 @@
+using Microsoft.Extensions.Options;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 using static OpenIddict.Server.OpenIddictServerEvents;
 
 namespace WinOpenID;
 
-// Based on: https://github.com/auroris/OpenIddict-WindowsAuth
-public static class WinOpenIDServiceCollectionExtensions
+public static class WinOpenIDExtensions
 {
+    // Based on: https://github.com/auroris/OpenIddict-WindowsAuth
     public static IServiceCollection AddWinOpenId(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<WinOpenIDOptions>(configuration.GetSection(WinOpenIDOptions.Server));
@@ -45,6 +46,17 @@ public static class WinOpenIDServiceCollectionExtensions
                     WinOpenIDClaims.EmployeeId, WinOpenIDClaims.UniqueName
                 );
 
+                options.Configure(openIddictOptions =>
+                {
+                    // Prompt configuration is not supported
+                    openIddictOptions.PromptValues.Clear();
+                    openIddictOptions.PromptValues.Add(PromptValues.None);
+
+                    // Clients are public (PKCE only): the server doesn't authenticate them
+                    openIddictOptions.ClientAuthenticationMethods.Clear();
+                    openIddictOptions.ClientAuthenticationMethods.Add("none");
+                });
+
                 // Event handler for validating authorization requests
                 options.AddEventHandler<ValidateAuthorizationRequestContext>(builder => builder.UseSingletonHandler<WinOpenIDServerHandler>());
 
@@ -61,5 +73,16 @@ public static class WinOpenIDServiceCollectionExtensions
             });
 
         return services;
+    }
+
+    public static IApplicationBuilder UseWinOpenID(this IApplicationBuilder app)
+    {
+        var serverOptions = app.ApplicationServices.GetRequiredService<IOptions<WinOpenIDOptions>>().Value;
+
+        app.UseCors(builder => builder.AllowAnyHeader().WithMethods("GET", "POST").WithOrigins(serverOptions.GetAllowedCorsOrigins()));
+
+        app.UseAuthentication();
+
+        return app;
     }
 }
