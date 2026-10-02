@@ -36,7 +36,7 @@ public static class WinOpenIDServiceCollectionExtensions
                        .AllowImplicitFlow();
 
                 // Tell OpenIddict that we support these scopes
-                options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Roles);
+                options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Phone, Scopes.Roles);
 
                 // Tell OpenIddict that we support these claims
                 options.RegisterClaims(

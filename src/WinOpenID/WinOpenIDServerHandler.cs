@@ -26,13 +26,13 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
     // Event handler for validating authorization requests
     ValueTask IOpenIddictServerHandler<ValidateAuthorizationRequestContext>.HandleAsync(ValidateAuthorizationRequestContext context)
     {
+        // get scheme server and path from redirect_uri
+        var redirectUri = new Uri(context.RedirectUri).GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.Unescaped);
+
         // Verification: I accept all context.ClientId's, but do check to see if the context.RedirectUri is proper
-        foreach (string host in serverOptions.AllowedHosts)
+        if (serverOptions.AllowedHosts.Any(host => string.Equals(redirectUri, host, StringComparison.OrdinalIgnoreCase)))
         {
-            if (context.RedirectUri.StartsWith(host, StringComparison.InvariantCultureIgnoreCase))
-            {
-                return default;
-            }
+            return default;
         }
 
         // Fall-through: URL was not proper.
@@ -78,60 +78,44 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
             return;
         }
 
-        // Attach basic id if requested
-        if (context.Request.HasScope(Scopes.OpenId))
+        // Add the name identifier claim; this is the user's unique identifier
+        string subject = serverOptions.UseDomain
+            ? user.Guid.ToString()
+            : user.Sid.Value;
+        identity.AddClaim(Claims.Subject, subject);
+
+        // Add the user's email address
+        if (user.EmailAddress != null)
         {
-            // Add the name identifier claim; this is the user's unique identifier
-            string subject = serverOptions.UseDomain
-                ? user.Guid.ToString()
-                : user.Sid.Value;
-            identity.AddClaim(Claims.Subject, subject, Destinations.AccessToken, Destinations.IdentityToken);
+            identity.AddClaim(Claims.Email, user.EmailAddress);
+            identity.AddClaim(Claims.EmailVerified, true);
         }
 
-        // Attach email address if requested
-        if (context.Request.HasScope(Scopes.Email))
+        // Add the account's friendly name
+        identity.AddClaim(Claims.Name, user.DisplayName);
+
+        // Add the user name
+        identity.AddClaim(Claims.Username, user.Name);
+
+        // Add the user name
+        identity.AddClaim(Claims.PreferredUsername, user.Name);
+
+        // Add the user's windows username (uniquename)
+        string uniqueName = user.Sid.Translate(typeof(NTAccount)).Value;
+        identity.AddClaim(WinOpenIDClaims.UniqueName, uniqueName);
+
+        // Add the user's name
+        if (user.GivenName != null) { identity.AddClaim(Claims.GivenName, user.GivenName); }
+        if (user.Surname != null) { identity.AddClaim(Claims.FamilyName, user.Surname); }
+
+        // Add the employee id number
+        if (user.EmployeeId != null) { identity.AddClaim(WinOpenIDClaims.EmployeeId, user.EmployeeId); }
+
+        // Telephone 
+        if (user.VoiceTelephoneNumber != null)
         {
-            // Add the user's email address
-            if (user.EmailAddress != null)
-            {
-                identity.AddClaim(Claims.Email, user.EmailAddress, Destinations.IdentityToken);
-                identity.AddClaim(new Claim(Claims.EmailVerified, "true", ClaimValueTypes.Boolean).SetDestinations(Destinations.IdentityToken));
-            }
-        }
-
-        // Attach profile stuff if requested
-        if (context.Request.HasScope(Scopes.Profile))
-        {
-            // Add the account's friendly name
-            identity.AddClaim(Claims.Name, user.DisplayName, Destinations.IdentityToken);
-
-            // Add the user name
-            identity.AddClaim(Claims.Username, user.Name, Destinations.AccessToken, Destinations.IdentityToken);
-
-            // Add the user name
-            identity.AddClaim(Claims.PreferredUsername, user.Name, Destinations.AccessToken, Destinations.IdentityToken);
-
-            // Add the user's windows username (uniquename)
-            string uniqueName = user.Sid.Translate(typeof(NTAccount)).Value;
-            identity.AddClaim(WinOpenIDClaims.UniqueName, uniqueName, Destinations.AccessToken, Destinations.IdentityToken);
-
-            // Add the user's name
-            if (user.GivenName != null) { identity.AddClaim(Claims.GivenName, user.GivenName, Destinations.IdentityToken); }
-            if (user.Surname != null) { identity.AddClaim(Claims.FamilyName, user.Surname, Destinations.IdentityToken); }
-
-            // Add the employee id number
-            if (user.EmployeeId != null) { identity.AddClaim(WinOpenIDClaims.EmployeeId, user.EmployeeId, Destinations.AccessToken, Destinations.IdentityToken); }
-        }
-
-        // Attach phone number if requested
-        if (context.Request.HasScope(Scopes.Phone))
-        {
-            // Telephone 
-            if (user.VoiceTelephoneNumber != null)
-            {
-                identity.AddClaim(Claims.PhoneNumber, user.VoiceTelephoneNumber, Destinations.IdentityToken);
-                identity.AddClaim(new Claim(Claims.PhoneNumberVerified, "true", ClaimValueTypes.Boolean).SetDestinations(Destinations.IdentityToken));
-            }
+            identity.AddClaim(Claims.PhoneNumber, user.VoiceTelephoneNumber);
+            identity.AddClaim(Claims.PhoneNumberVerified, true);
         }
 
         // Attach roles if requested
@@ -142,14 +126,56 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
             {
                 if (group.Name != null)
                 {
-                    identity.AddClaim(Claims.Role, group.Name, Destinations.IdentityToken);
+                    identity.AddClaim(Claims.Role, group.Name);
                 }
             }
         }
 
+        var principal = new ClaimsPrincipal(identity);
+        principal.SetScopes(context.Request.GetScopes());
+        principal.SetDestinations(static claim => claim.Type switch
+        {
+            // If the "profile" scope was granted, allow the "name" claim to be
+            // added to the access and identity tokens derived from the principal.
+            Claims.Name when claim.Subject.HasScope(Scopes.Profile) =>
+            [
+                Destinations.AccessToken,
+                Destinations.IdentityToken
+            ],
+
+            Claims.Email or Claims.EmailVerified when claim.Subject.HasScope(Scopes.Email) =>
+            [
+                Destinations.AccessToken,
+                Destinations.IdentityToken
+            ],
+
+            Claims.Name or Claims.Username or Claims.PreferredUsername
+            or Claims.GivenName or Claims.FamilyName 
+            or WinOpenIDClaims.UniqueName or WinOpenIDClaims.EmployeeId 
+            when claim.Subject.HasScope(Scopes.Profile) =>
+            [
+                Destinations.AccessToken,
+                Destinations.IdentityToken
+            ],
+
+            Claims.PhoneNumber or Claims.PhoneNumberVerified when claim.Subject.HasScope(Scopes.Phone) =>
+            [
+                Destinations.AccessToken,
+                Destinations.IdentityToken
+            ],
+
+            Claims.Role when claim.Subject.HasScope(Scopes.Roles) => [
+                Destinations.AccessToken,
+                Destinations.IdentityToken
+            ],
+
+            // Otherwise, add the claim to the access tokens only.
+            _ => [Destinations.AccessToken]
+        });
+
         // Attach the principal to the authorization context, so that an OpenID Connect response
         // with an authorization code can be generated by the OpenIddict server services.
-        context.Principal = new ClaimsPrincipal(identity);
+        context.Principal = principal;
     }
 
     // Event handler for validating token requests
