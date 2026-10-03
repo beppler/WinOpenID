@@ -43,7 +43,7 @@ public static class WinOpenIDExtensions
                 options.RegisterClaims(
                     Claims.Name, Claims.Username, Claims.PreferredUsername, Claims.GivenName, Claims.FamilyName,
                     Claims.Email, Claims.EmailVerified, Claims.PhoneNumber, Claims.PhoneNumberVerified, Claims.Role,
-                    WinOpenIDClaims.EmployeeId, WinOpenIDClaims.UniqueName
+                    WinOpenIDClaims.EmployeeId
                 );
 
                 options.Configure(openIddictOptions =>
@@ -55,6 +55,10 @@ public static class WinOpenIDExtensions
                     // Clients are public (PKCE only): the server doesn't authenticate them
                     openIddictOptions.ClientAuthenticationMethods.Clear();
                     openIddictOptions.ClientAuthenticationMethods.Add("none");
+
+                    // Only accept S256 for PKCE: "plain" exposes the code verifier in the authorization request
+                    openIddictOptions.CodeChallengeMethods.Clear();
+                    openIddictOptions.CodeChallengeMethods.Add(CodeChallengeMethods.Sha256);
                 });
 
                 // Event handler for validating authorization requests
