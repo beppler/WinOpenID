@@ -33,8 +33,7 @@ public static class WinOpenIDExtensions
                        .SetTokenEndpointUris("/connect/token");
 
                 options.AllowAuthorizationCodeFlow()
-                       .RequireProofKeyForCodeExchange()
-                       .AllowImplicitFlow();
+                       .RequireProofKeyForCodeExchange();
 
                 // Tell OpenIddict that we support these scopes
                 options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Phone, Scopes.Roles);
