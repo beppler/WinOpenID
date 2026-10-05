@@ -39,6 +39,8 @@ public class WinOpenIDOptions
         return allowedRedirectUris.Any(allowed => string.Equals(address, allowed, StringComparison.OrdinalIgnoreCase));
     }
 
+    public Uri Issuer { get; set; }
+
     private string[] encryptionKeys = [];
     public string[] EncryptionKeys
     {

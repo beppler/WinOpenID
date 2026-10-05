@@ -27,7 +27,15 @@ public static class WinOpenIDExtensions
                     .AddSigningKeys(serverOptions.GetSigningKeys());
 
                 if (!serverOptions.EncryptAccessToken)
+                {
                     options.DisableAccessTokenEncryption();
+                }
+
+                // A fixed issuer prevents a forged Host header from changing the discovery document and the tokens
+                if (serverOptions.Issuer != null)
+                {
+                    options.SetIssuer(serverOptions.Issuer);
+                }
 
                 options.SetAuthorizationEndpointUris("/connect/authorize")
                        .SetTokenEndpointUris("/connect/token");

@@ -57,7 +57,9 @@ As opções do servidor ficam na seção `Server` da configuração do ASP.NET C
 
 ```shell
 # Variáveis de ambiente (arrays usam o índice como chave)
+set AllowedHosts=identity.example.com
 set Server__Domain=my.ad.domain.com
+set Server__Issuer=https://identity.example.com/
 set Server__AllowedRedirectUris__0=https://app.example.com/callback
 set Server__SigningKeys__0=MIGkAgEBBDD...
 set Server__EncryptionKeys__0=q2Vx...
@@ -74,6 +76,7 @@ dotnet WinOpenID.dll --Server:Domain=my.ad.domain.com
 | `Domain` | `string` | *(vazio)* | Domínio do Active Directory onde os usuários são pesquisados. Se vazio, são usadas as contas locais da máquina. |
 | `EncryptionKeys` | `string[]` | `[]` | **Obrigatório.** Chaves simétricas usadas para criptografar os tokens. Veja [Chaves de criptografia](#chaves-de-criptografia). |
 | `EncryptAccessToken` | `bool` | `true` | Indica se o *access token* deve ser criptografado. Com `false`, o *access token* é emitido como um JWT apenas assinado, que pode ser lido e validado por APIs de terceiros. |
+| `Issuer` | `Uri` | *(vazio)* | Endereço público do servidor, usado como `iss` dos tokens e como base das URLs do documento de descoberta. Recomendado em produção. Veja [Issuer e hosts permitidos](#issuer-e-hosts-permitidos). |
 | `SigningKeys` | `string[]` | `[]` | **Obrigatório.** Chaves privadas ECDSA usadas para assinar os tokens. Veja [Chaves de assinatura](#chaves-de-assinatura). |
 
 ### URIs de retorno e CORS
@@ -84,6 +87,23 @@ Uma requisição só é aceita se o `redirect_uri` informado corresponder a uma 
 - `https://app.example.com/outro` e `http://app.example.com/callback` são recusados.
 
 As origens (esquema, servidor e porta) dessas mesmas URIs também são liberadas no CORS para requisições `GET` e `POST`, permitindo que aplicações SPA acessem o endpoint de token, o documento de descoberta e o conjunto de chaves públicas (JWKS).
+
+### Issuer e hosts permitidos
+
+Quando `Issuer` não é configurado, o OpenIddict deduz o issuer a partir do cabeçalho `Host` de cada requisição. Uma requisição com um `Host` forjado faz o documento de descoberta anunciar endpoints em outro servidor e muda o `iss` dos tokens emitidos. Em produção, configure o endereço público do servidor:
+
+```json
+{
+  "AllowedHosts": "identity.example.com",
+  "Server": {
+    "Issuer": "https://identity.example.com/"
+  }
+}
+```
+
+Como camada adicional, a opção `AllowedHosts` do ASP.NET Core (fora da seção `Server`) faz com que requisições cujo `Host` não esteja na lista sejam recusadas com `400 Bad Request`. Ela aceita vários hosts separados por `;` e curingas de subdomínio (`*.example.com`), e não considera a porta. Sem a opção, ou com `*`, qualquer host é aceito. Veja [Host filtering](https://learn.microsoft.com/aspnet/core/fundamentals/servers/kestrel/host-filtering).
+
+O `appsettings.Development.json` libera apenas `localhost` e não define `Issuer`, para que os perfis `WinOpenID` e `IIS Express` funcionem nas suas respectivas portas.
 
 ### Domínio e identificador do usuário
 
@@ -138,19 +158,20 @@ O servidor não usa chaves efêmeras: é necessário configurar ao menos uma cha
       "Default": "Warning"
     }
   },
+  "AllowedHosts": "identity.example.com",
   "Server": {
     "AllowedRedirectUris": [
-      "https://app.example.com/callback",
-      "https://oidcdebugger.com/debug"
+      "https://app.example.com/callback"
     ],
     "Domain": "my.ad.domain.com",
+    "Issuer": "https://identity.example.com/",
     "SigningKeys": [
       "<chave ECDSA em Base64 gerada com scripts/signkeygen.cs>"
     ],
     "EncryptionKeys": [
       "<chave simétrica de 32 bytes em Base64>"
     ],
-    "EncryptAccessToken": false
+    "EncryptAccessToken": true
   }
 }
 ```
