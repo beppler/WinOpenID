@@ -49,7 +49,7 @@ public static class WinOpenIDExtensions
                 {
                     // Prompt configuration is not supported
                     openIddictOptions.PromptValues.Clear();
-                    openIddictOptions.PromptValues.Add(PromptValues.None);
+                    openIddictOptions.PromptValues.Add(PromptValues.Login);
 
                     // Clients are public (PKCE only): the server doesn't authenticate them
                     openIddictOptions.ClientAuthenticationMethods.Clear();
