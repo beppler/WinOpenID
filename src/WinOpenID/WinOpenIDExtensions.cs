@@ -47,9 +47,8 @@ public static class WinOpenIDExtensions
 
                 options.Configure(openIddictOptions =>
                 {
-                    // Prompt configuration is not supported
+                    // The prompt parameter is not supported: Windows authentication can't force a new login
                     openIddictOptions.PromptValues.Clear();
-                    openIddictOptions.PromptValues.Add(PromptValues.Login);
 
                     // Clients are public (PKCE only): the server doesn't authenticate them
                     openIddictOptions.ClientAuthenticationMethods.Clear();
