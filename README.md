@@ -68,7 +68,7 @@ Uma requisição só é aceita se o `redirect_uri` informado corresponder a uma 
 - `https://app.example.com/callback?x=1` é aceito;
 - `https://app.example.com/outro` e `http://app.example.com/callback` são recusados.
 
-As origens (esquema, servidor e porta) dessas mesmas URIs também são liberadas no CORS para requisições `GET` e `POST`, permitindo que aplicações SPA acessem o endpoint de token e o documento de descoberta.
+As origens (esquema, servidor e porta) dessas mesmas URIs também são liberadas no CORS para requisições `GET` e `POST`, permitindo que aplicações SPA acessem o endpoint de token, o documento de descoberta e o conjunto de chaves públicas (JWKS).
 
 ### Domínio e identificador do usuário
 
