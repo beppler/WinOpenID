@@ -181,6 +181,19 @@ dotnet scripts/signkeygen.cs --curve nistP256
 
 A opção `--curve` (ou `-c`) aceita `nistP256`, `nistP384` (padrão) e `nistP521`.
 
+Também podem ser geradas, por exemplo, com:
+
+```shell
+openssl ecparam -name secp384r1 -genkey -noout -outform DER | openssl base64 -A
+```
+
+```powershell
+# PowerShell 7 ou superior (o Windows PowerShell 5.1 não tem ExportECPrivateKey)
+[Convert]::ToBase64String([Security.Cryptography.ECDsa]::Create([Security.Cryptography.ECCurve+NamedCurves]::nistP384).ExportECPrivateKey())
+```
+
+No OpenSSL, as curvas `nistP256`, `nistP384` e `nistP521` se chamam `prime256v1`, `secp384r1` e `secp521r1`, respectivamente.
+
 É possível informar mais de uma chave para fazer a rotação: a primeira é usada para assinar novos tokens e todas são publicadas em `/.well-known/jwks`, de forma que tokens assinados com chaves anteriores continuam válidos.
 
 ### Chaves de criptografia
