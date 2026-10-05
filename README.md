@@ -2,7 +2,9 @@
 
 Servidor OpenID Connect simples com autenticação integrada do Windows.
 
-O WinOpenID usa o [OpenIddict](https://documentation.openiddict.com/) em *degraded mode* (sem banco de dados, sem cadastro de clientes ou usuários) para emitir tokens OpenID Connect a partir da autenticação integrada do Windows (Negotiate: Kerberos/NTLM). Os dados do usuário (nome, e-mail, telefone, grupos etc.) são obtidos do Active Directory ou das contas locais da máquina por meio de `System.DirectoryServices.AccountManagement`.
+O WinOpenID usa o [OpenIddict](https://documentation.openiddict.com/) em *degraded mode* (sem banco de dados: os clientes são cadastrados na própria configuração e os usuários vêm do diretório) para emitir tokens OpenID Connect a partir da autenticação integrada do Windows (Negotiate: Kerberos/NTLM).
+
+Os dados do usuário (nome, e-mail, telefone, grupos etc.) são obtidos do Active Directory ou das contas locais da máquina por meio de `System.DirectoryServices.AccountManagement`.
 
 ## Requisitos
 
@@ -33,20 +35,20 @@ O endereço raiz (`/`) redireciona para o documento de descoberta do OpenID Conn
 ## Fluxo suportado
 
 - Somente **Authorization Code** com **PKCE obrigatório**, aceitando apenas o método `S256` (o método `plain` é recusado).
-- Os clientes são públicos: qualquer `client_id` é aceito e não há autenticação de cliente (`client_secret`). O controle de acesso é feito pela lista de URIs de retorno permitidas (`AllowedRedirectUris`).
+- Os clientes são públicos, sem autenticação de cliente (`client_secret`), mas precisam estar cadastrados em `Clients`. Como o *authorization code* só é entregue nas URIs de retorno cadastradas para o `client_id`, o `client_id` dos tokens identifica a aplicação. Veja [Clientes](#clientes).
 - O *authorization code* é válido por apenas 1 minuto. Como o servidor não tem banco de dados, ele não consegue registrar que um código já foi usado, e o mesmo código pode ser trocado por tokens mais de uma vez dentro desse prazo (o PKCE exige o *code verifier* em cada troca).
 - O parâmetro `prompt` não é suportado: a autenticação integrada do Windows não permite forçar um novo login nem garantir uma autenticação sem interação com o usuário. Os clientes não devem enviá-lo.
 - O *implicit flow* e os demais *grant types* (`client_credentials`, `password`, `refresh_token` etc.) não são suportados.
 
 ## Escopos e claims
 
-Os escopos suportados são `openid`, `profile`, `email`, `phone` e `roles`. As claims emitidas dependem dos escopos solicitados:
+Os escopos suportados são `openid`, `profile`, `email`, `phone` e `roles`. Cada cliente só pode solicitar os escopos permitidos no seu cadastro, inclusive o `openid`. As claims emitidas dependem dos escopos solicitados:
 
 | Escopo | Claims | Token |
 |---|---|---|
 | *(sempre)* | `sub`, `username`, `preferred_username` | ID token e access token |
 | `profile` | `name`, `given_name`, `family_name`, `employee_id` | ID token |
-| `profile` | `email`, `email_verified` | ID token |
+| `email` | `email`, `email_verified` | ID token |
 | `phone` | `phone_number`, `phone_number_verified` | ID token |
 | `roles` | `role` (uma para cada grupo de segurança do usuário, incluindo grupos aninhados) | ID token |
 
@@ -61,7 +63,10 @@ As opções do servidor ficam na seção `Server` da configuração do ASP.NET C
 set AllowedHosts=identity.example.com
 set Server__Domain=my.ad.domain.com
 set Server__Issuer=https://identity.example.com/
-set Server__AllowedRedirectUris__0=https://app.example.com/callback
+set Server__Clients__app__RedirectUris__0=https://app.example.com/callback
+set Server__Clients__app__Scopes__0=openid
+set Server__Clients__app__Scopes__1=profile
+set Server__Clients__app__Audiences__0=https://api.example.com
 set Server__SigningKeys__0=MIGkAgEBBDD...
 set Server__EncryptionKeys__0=q2Vx...
 
@@ -73,16 +78,59 @@ dotnet WinOpenID.dll --Server:Domain=my.ad.domain.com
 
 | Opção | Tipo | Padrão | Descrição |
 |---|---|---|---|
-| `AllowedRedirectUris` | `string[]` | `[]` | URIs de retorno (`redirect_uri`) permitidas. Veja [URIs de retorno e CORS](#uris-de-retorno-e-cors). |
+| `Clients` | `object` | `{}` | Clientes cadastrados, indexados pelo `client_id`, com as URIs de retorno e os escopos permitidos de cada um. Veja [Clientes](#clientes). |
 | `Domain` | `string` | *(vazio)* | Domínio do Active Directory onde os usuários são pesquisados. Se vazio, são usadas as contas locais da máquina. |
 | `EncryptionKeys` | `string[]` | `[]` | **Obrigatório.** Chaves simétricas usadas para criptografar os tokens. Veja [Chaves de criptografia](#chaves-de-criptografia). |
 | `EncryptAccessToken` | `bool` | `true` | Indica se o *access token* deve ser criptografado. Com `false`, o *access token* é emitido como um JWT apenas assinado, que pode ser lido e validado por APIs de terceiros. |
 | `Issuer` | `Uri` | *(vazio)* | Endereço público do servidor, usado como `iss` dos tokens e como base das URLs do documento de descoberta. Recomendado em produção. Veja [Issuer e hosts permitidos](#issuer-e-hosts-permitidos). |
 | `SigningKeys` | `string[]` | `[]` | **Obrigatório.** Chaves privadas ECDSA usadas para assinar os tokens. Veja [Chaves de assinatura](#chaves-de-assinatura). |
 
-### URIs de retorno e CORS
+### Clientes
 
-Uma requisição só é aceita se o `redirect_uri` informado for exatamente igual a uma das URIs de `AllowedRedirectUris`, como exigem o [OAuth 2.0 Security BCP (RFC 9700)](https://www.rfc-editor.org/rfc/rfc9700) e o OAuth 2.1. A comparação inclui o caminho e a *query string* e diferencia maiúsculas de minúsculas no caminho; apenas o esquema e o servidor são comparados sem diferenciar maiúsculas, e a porta padrão é desconsiderada. Por exemplo, com `https://app.example.com/callback` configurado:
+Cada cliente é cadastrado em `Clients`, usando o `client_id` como chave (a comparação diferencia maiúsculas de minúsculas):
+
+```json
+{
+  "Server": {
+    "Clients": {
+      "app": {
+        "RedirectUris": [ "https://app.example.com/callback" ],
+        "Scopes": [ "openid", "profile", "roles" ],
+        "Audiences": [ "https://api.example.com" ]
+      }
+    }
+  }
+}
+```
+
+| Opção | Tipo | Padrão | Descrição |
+|---|---|---|---|
+| `RedirectUris` | `string[]` | `[]` | URIs de retorno (`redirect_uri`) permitidas para o cliente. |
+| `Scopes` | `string[]` | `[]` | Escopos que o cliente pode solicitar, entre `openid`, `profile`, `email`, `phone` e `roles`. Sem `openid`, o cliente não recebe o ID token. Um escopo não suportado impede a inicialização do servidor. |
+| `Audiences` | `string[]` | `[]` | Audiências (`aud`) dos *access tokens* emitidos para o cliente, normalmente os identificadores das APIs que ele acessa. Veja [Audiência do access token](#audiência-do-access-token). |
+
+Requisições com um `client_id` não cadastrado são recusadas com `invalid_client`, e requisições com escopos não permitidos para o cliente, com `invalid_scope`.
+
+#### Audiência do access token
+
+O *access token* de um cliente é emitido com a claim `aud` contendo todas as audiências de `Audiences`. Sem audiências configuradas, o *access token* é emitido sem `aud`. O ID token sempre tem o `client_id` como `aud`, como define o OpenID Connect.
+
+Uma mesma API pode ser autorizada para vários clientes: basta incluir o identificador dela em `Audiences` de cada um. Cada API deve validar a própria audiência e aceitar apenas *access tokens*, recusando ID tokens. Por exemplo, com o `JwtBearer` do ASP.NET Core:
+
+```csharp
+builder.Services.AddAuthentication().AddJwtBearer(options =>
+{
+    options.Authority = "https://identity.example.com/";
+    options.Audience = "https://api.example.com";
+    options.TokenValidationParameters.ValidTypes = ["at+jwt"];
+});
+```
+
+O *access token* tem `typ` `at+jwt` no cabeçalho e o ID token, `JWT`. Esse exemplo pressupõe `EncryptAccessToken` igual a `false`; com o *access token* criptografado, a API precisa da chave de criptografia, e a validação do OpenIddict (`AddValidation` com `AddAudiences`) é o caminho mais simples.
+
+#### URIs de retorno e CORS
+
+Uma requisição só é aceita se o `redirect_uri` informado for exatamente igual a uma das URIs de `RedirectUris` do cliente, como exigem o [OAuth 2.0 Security BCP (RFC 9700)](https://www.rfc-editor.org/rfc/rfc9700) e o OAuth 2.1. A comparação inclui o caminho e a *query string* e diferencia maiúsculas de minúsculas no caminho; apenas o esquema e o servidor são comparados sem diferenciar maiúsculas, e a porta padrão é desconsiderada. Por exemplo, com `https://app.example.com/callback` configurado:
 
 - `https://app.example.com/callback` e `https://APP.example.com:443/callback` são aceitos;
 - `https://app.example.com/callback?x=1`, `https://app.example.com/Callback`, `https://app.example.com/callback/` e `http://app.example.com/callback` são recusados.
@@ -91,7 +139,7 @@ Se um cliente precisar de parâmetros na URI de retorno, a URI completa, com a *
 
 As URIs configuradas devem ser absolutas, não podem ter fragmento (`#...`) e devem usar `https`; `http` só é aceito em endereços de *loopback* (`localhost`, `127.0.0.1`, `[::1]`). Uma URI inválida impede a inicialização do servidor.
 
-As origens (esquema, servidor e porta) dessas mesmas URIs também são liberadas no CORS para requisições `GET` e `POST`, permitindo que aplicações SPA acessem o endpoint de token, o documento de descoberta e o conjunto de chaves públicas (JWKS).
+As origens (esquema, servidor e porta) das URIs de todos os clientes também são liberadas no CORS para requisições `GET` e `POST`, permitindo que aplicações SPA acessem o endpoint de token, o documento de descoberta e o conjunto de chaves públicas (JWKS).
 
 ### Issuer e hosts permitidos
 
@@ -121,19 +169,6 @@ A opção `Domain` define onde os dados do usuário autenticado são pesquisados
 
 O usuário autenticado é localizado pelo seu SID, e não pelo nome. Por isso, ele precisa pertencer ao domínio configurado (ou ser uma conta local da máquina, quando `Domain` está vazio). Usuários de outros domínios, mesmo que confiáveis, e usuários de domínio quando `Domain` está vazio são recusados com `access_denied`.
 
-### Chaves de criptografia
-
-As chaves de `EncryptionKeys` são chaves simétricas codificadas em Base64, com 256 bits (32 bytes). Elas protegem o *authorization code* e, quando `EncryptAccessToken` é `true`, o *access token*. Podem ser geradas, por exemplo, com:
-
-```shell
-openssl rand -base64 32
-```
-
-```powershell
-[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
-```
-
-Assim como nas chaves de assinatura, a primeira chave é usada para criptografar e as demais servem apenas para descriptografar, permitindo a rotação.
 
 ### Chaves de assinatura
 
@@ -148,9 +183,25 @@ A opção `--curve` (ou `-c`) aceita `nistP256`, `nistP384` (padrão) e `nistP52
 
 É possível informar mais de uma chave para fazer a rotação: a primeira é usada para assinar novos tokens e todas são publicadas em `/.well-known/jwks`, de forma que tokens assinados com chaves anteriores continuam válidos.
 
+### Chaves de criptografia
+
+As chaves de `EncryptionKeys` são chaves simétricas codificadas em Base64, com 256 bits (32 bytes). Elas protegem o *authorization code* e, quando `EncryptAccessToken` é `true`, o *access token*. Podem ser geradas, por exemplo, com:
+
+```shell
+openssl rand -base64 32
+```
+
+```powershell
+[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+Assim como nas chaves de assinatura, a primeira chave é usada para criptografar e as demais servem apenas para descriptografar, permitindo a rotação.
+
 ### Chaves obrigatórias
 
-O servidor não usa chaves efêmeras: é necessário configurar ao menos uma chave em `SigningKeys` e uma em `EncryptionKeys`, caso contrário o OpenIddict gera um erro de configuração. Como as chaves são fixas, os tokens emitidos continuam válidos após reinicializações e podem ser compartilhados entre múltiplas instâncias do servidor.
+É necessário configurar ao menos uma chave em `SigningKeys` e uma em `EncryptionKeys`, caso contrário o servidor gera um erro de configuração.
+
+Como as chaves são fixas, os tokens emitidos continuam válidos após reinicializações e podem ser compartilhados entre múltiplas instâncias do servidor.
 
 > **Atenção:** as chaves presentes em `appsettings.Development.json` são públicas e servem apenas para desenvolvimento. Em produção, gere novas chaves e mantenha-as fora do controle de versão (variáveis de ambiente, *user secrets*, cofre de segredos etc.). Os arquivos `appsettings.*.json` não são copiados na publicação (`CopyToPublishDirectory="Never"` em `WinOpenID.csproj`).
 
@@ -165,9 +216,13 @@ O servidor não usa chaves efêmeras: é necessário configurar ao menos uma cha
   },
   "AllowedHosts": "identity.example.com",
   "Server": {
-    "AllowedRedirectUris": [
-      "https://app.example.com/callback"
-    ],
+    "Clients": {
+      "app": {
+        "RedirectUris": [ "https://app.example.com/callback" ],
+        "Scopes": [ "openid", "profile", "roles" ],
+        "Audiences": [ "https://api.example.com" ]
+      }
+    },
     "Domain": "my.ad.domain.com",
     "Issuer": "https://identity.example.com/",
     "SigningKeys": [
@@ -203,8 +258,8 @@ Depois de alterar as variáveis, recicle o *Application Pool*. Os valores ficam 
 
 Para testar o servidor pode ser usado o [OpenID Connect Debugger](https://oidcdebugger.com/debug):
 
-1. Inicie o servidor no ambiente `Development` (as URIs `https://oidcdebugger.com/debug` e `https://jwt.io/` já estão liberadas em `appsettings.Development.json`).
-2. Informe `https://localhost:5001/connect/authorize` como *Authorize URI*, qualquer valor como *Client ID* e o escopo `openid` (e, opcionalmente, `profile phone roles`).
+1. Inicie o servidor no ambiente `Development` (o cliente `oidcdebugger`, com a URI `https://oidcdebugger.com/debug`, já está cadastrado em `appsettings.Development.json`).
+2. Informe `https://localhost:5001/connect/authorize` como *Authorize URI*, `oidcdebugger` como *Client ID* e o escopo `openid` (e, opcionalmente, `profile email phone roles`).
 3. Selecione o *response type* `code` e habilite o PKCE com o método `S256`.
 4. Após a autenticação, use o *authorization code* e o *code verifier* para obter os tokens em `https://localhost:5001/connect/token`.
 

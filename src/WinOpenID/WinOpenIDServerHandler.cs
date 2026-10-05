@@ -26,10 +26,22 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
     // Event handler for validating authorization requests
     ValueTask IOpenIddictServerHandler<ValidateAuthorizationRequestContext>.HandleAsync(ValidateAuthorizationRequestContext context)
     {
-        // Verification: I accept all context.ClientId's, but do check to see if the context.RedirectUri is proper
-        if (!serverOptions.IsAllowedRedirectUri(context.RedirectUri))
+        // Clients are public, so the client_id is trusted because the code is only sent to its registered redirect URIs
+        if (!serverOptions.TryGetClient(context.ClientId, out WinOpenIDClientOptions client))
+        {
+            context.Reject(error: Errors.InvalidClient, description: "The specified 'client_id' is not valid.");
+            return default;
+        }
+
+        if (!client.IsAllowedRedirectUri(context.RedirectUri))
         {
             context.Reject(error: Errors.InvalidRequest, description: "The specified 'redirect_uri' is not valid for this client application.");
+            return default;
+        }
+
+        if (!context.Request.GetScopes().All(client.IsAllowedScope))
+        {
+            context.Reject(error: Errors.InvalidScope, description: "The specified 'scope' is not allowed for this client application.");
         }
 
         return default;
@@ -72,9 +84,19 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
             return;
         }
 
+        // The client was checked when the request was validated
+        if (!serverOptions.TryGetClient(context.ClientId, out WinOpenIDClientOptions client))
+        {
+            context.Reject(error: Errors.InvalidClient, description: "The specified 'client_id' is not valid.");
+            return;
+        }
+
         // We're authenticated using Windows authentication, build an Identity with Claims;
         ClaimsIdentity identity = new(TokenValidationParameters.DefaultAuthenticationType, Claims.Name, Claims.Role);
         identity.SetScopes(context.Request.GetScopes());
+
+        // The resources become the audiences (aud) of the access token
+        identity.SetResources(client.Audiences);
 
         // Add the name identifier claim; this is the user's unique identifier
         string subject = serverOptions.UseDomain ? userInfo.Guid.ToString() : userInfo.Sid.Value;
@@ -110,7 +132,7 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
             }
         }
 
-        if (context.Request.HasScope(Scopes.Profile) && userInfo.EmailAddress != null)
+        if (context.Request.HasScope(Scopes.Email) && userInfo.EmailAddress != null)
         {
             // Add the user's email address
             identity.AddClaim(new Claim(Claims.Email, userInfo.EmailAddress).SetDestinations([Destinations.IdentityToken]));
@@ -143,15 +165,22 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
     // Event handler for validating token requests
     ValueTask IOpenIddictServerHandler<ValidateTokenRequestContext>.HandleAsync(ValidateTokenRequestContext context)
     {
-        // I accept all context.ClientId's, but only the authorization code grant is supported
+        // Only the authorization code grant is supported
         if (!context.Request.IsAuthorizationCodeGrantType())
         {
             context.Reject(error: Errors.UnsupportedGrantType, description: "The specified 'grant_type' is not supported.");
             return default;
         }
 
-        // Defense in depth: OpenIddict already binds the code to its redirect_uri, but check the whitelist again
-        if (context.Request.RedirectUri != null && !serverOptions.IsAllowedRedirectUri(context.Request.RedirectUri))
+        // OpenIddict already checks that the code is redeemed by the client it was issued to
+        if (!serverOptions.TryGetClient(context.ClientId, out WinOpenIDClientOptions client))
+        {
+            context.Reject(error: Errors.InvalidClient, description: "The specified 'client_id' is not valid.");
+            return default;
+        }
+
+        // Defense in depth: OpenIddict already binds the code to its redirect_uri, but check the client's list again
+        if (context.Request.RedirectUri != null && !client.IsAllowedRedirectUri(context.Request.RedirectUri))
         {
             context.Reject(error: Errors.InvalidGrant, description: "The specified 'redirect_uri' is not valid for this client application.");
         }
