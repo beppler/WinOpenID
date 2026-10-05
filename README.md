@@ -172,16 +172,7 @@ O usuário autenticado é localizado pelo seu SID, e não pelo nome. Por isso, e
 
 ### Chaves de assinatura
 
-As chaves de `SigningKeys` são chaves privadas de curva elíptica (ECDSA) no formato EC (SEC 1, DER) codificadas em Base64. Elas podem ser geradas com o script `scripts/signkeygen.cs`:
-
-```shell
-dotnet scripts/signkeygen.cs
-dotnet scripts/signkeygen.cs --curve nistP256
-```
-
-A opção `--curve` (ou `-c`) aceita `nistP256`, `nistP384` (padrão) e `nistP521`.
-
-Também podem ser geradas, por exemplo, com:
+As chaves de `SigningKeys` são chaves privadas de curva elíptica (ECDSA) no formato EC (SEC 1, DER) codificadas em Base64. Podem ser geradas, por exemplo, com:
 
 ```shell
 openssl ecparam -name secp384r1 -genkey -noout -outform DER | openssl base64 -A
@@ -192,7 +183,7 @@ openssl ecparam -name secp384r1 -genkey -noout -outform DER | openssl base64 -A
 [Convert]::ToBase64String([Security.Cryptography.ECDsa]::Create([Security.Cryptography.ECCurve+NamedCurves]::nistP384).ExportECPrivateKey())
 ```
 
-No OpenSSL, as curvas `nistP256`, `nistP384` e `nistP521` se chamam `prime256v1`, `secp384r1` e `secp521r1`, respectivamente.
+Os exemplos usam a curva P-384. Também são aceitas as curvas P-256 e P-521, que no OpenSSL se chamam `prime256v1` e `secp521r1` e no .NET, `nistP256` e `nistP521`.
 
 É possível informar mais de uma chave para fazer a rotação: a primeira é usada para assinar novos tokens e todas são publicadas em `/.well-known/jwks`, de forma que tokens assinados com chaves anteriores continuam válidos.
 
@@ -239,7 +230,7 @@ Como as chaves são fixas, os tokens emitidos continuam válidos após reinicial
     "Domain": "my.ad.domain.com",
     "Issuer": "https://identity.example.com/",
     "SigningKeys": [
-      "<chave ECDSA em Base64 gerada com scripts/signkeygen.cs>"
+      "<chave ECDSA em Base64>"
     ],
     "EncryptionKeys": [
       "<chave simétrica de 32 bytes em Base64>"
