@@ -48,7 +48,7 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
 
         // Try to get the authentication of the current session via Windows Authentication
         AuthenticateResult result = await request.HttpContext.AuthenticateAsync(NegotiateDefaults.AuthenticationScheme);
-        if (result?.Principal is not WindowsPrincipal)
+        if (result?.Principal is not WindowsPrincipal { Identity: WindowsIdentity windowsIdentity })
         {
             // Run Windows authentication
             await request.HttpContext.ChallengeAsync(NegotiateDefaults.AuthenticationScheme);
@@ -61,11 +61,12 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
             ? new PrincipalContext(ContextType.Domain, serverOptions.Domain)
             : new PrincipalContext(ContextType.Machine);
 
-        // Get information about the user
-        string userName = result.Principal.FindFirstValue(ClaimTypes.Name)!;
-        UserPrincipal user = UserPrincipal.FindByIdentity(directoryService, userName);
+        // Search by SID as SID is unique (user names can clash on trusted domains)
+        SecurityIdentifier userSid = windowsIdentity.User;
+        using UserPrincipal userInfo = userSid == null ? null : UserPrincipal.FindByIdentity(directoryService, IdentityType.Sid, userSid.Value);
 
-        if (user == null)
+        // Defense in depth: make sure the account found is the authenticated one
+        if (userInfo == null || userInfo.Sid != userSid)
         {
             context.Reject(error: Errors.AccessDenied, description: "User is not found.");
             return;
@@ -76,55 +77,59 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
         identity.SetScopes(context.Request.GetScopes());
 
         // Add the name identifier claim; this is the user's unique identifier
-        string subject = serverOptions.UseDomain ? user.Guid.ToString() : user.Sid.Value;
+        string subject = serverOptions.UseDomain ? userInfo.Guid.ToString() : userInfo.Sid.Value;
         identity.AddClaim(Claims.Subject, subject);
 
         // Add the user´s login name
-        identity.AddClaim(new Claim(Claims.Username, userName).SetDestinations([Destinations.AccessToken, Destinations.IdentityToken]));
-        identity.AddClaim(new Claim(Claims.PreferredUsername, userName).SetDestinations([Destinations.AccessToken, Destinations.IdentityToken]));
+        identity.AddClaim(new Claim(Claims.Username, windowsIdentity.Name).SetDestinations([Destinations.AccessToken, Destinations.IdentityToken]));
+        identity.AddClaim(new Claim(Claims.PreferredUsername, windowsIdentity.Name).SetDestinations([Destinations.AccessToken, Destinations.IdentityToken]));
 
         // Add user's profile fields
         if (context.Request.HasScope(Scopes.Profile))
         {
             // Add the account's friendly name
-            identity.AddClaim(new Claim(Claims.Name, user.DisplayName).SetDestinations([Destinations.IdentityToken]));
+            if (userInfo.DisplayName != null)
+            {
+                identity.AddClaim(new Claim(Claims.Name, userInfo.DisplayName).SetDestinations([Destinations.IdentityToken]));
+            }
 
             // Add the user's given and sur names
-            if (user.GivenName != null)
+            if (userInfo.GivenName != null)
             { 
-                identity.AddClaim(new Claim(Claims.GivenName, user.GivenName).SetDestinations([Destinations.IdentityToken])); 
+                identity.AddClaim(new Claim(Claims.GivenName, userInfo.GivenName).SetDestinations([Destinations.IdentityToken])); 
             }
-            if (user.Surname != null)
+            if (userInfo.Surname != null)
             { 
-                identity.AddClaim(new Claim(Claims.FamilyName, user.Surname).SetDestinations([Destinations.IdentityToken])); 
+                identity.AddClaim(new Claim(Claims.FamilyName, userInfo.Surname).SetDestinations([Destinations.IdentityToken])); 
             }
 
             // Add the user's employee id number
-            if (user.EmployeeId != null)
+            if (userInfo.EmployeeId != null)
             { 
-                identity.AddClaim(new Claim(WinOpenIDClaims.EmployeeId, user.EmployeeId).SetDestinations([Destinations.IdentityToken])); 
+                identity.AddClaim(new Claim(WinOpenIDClaims.EmployeeId, userInfo.EmployeeId).SetDestinations([Destinations.IdentityToken])); 
             }
         }
 
-        if (context.Request.HasScope(Scopes.Profile) && user.EmailAddress != null)
+        if (context.Request.HasScope(Scopes.Profile) && userInfo.EmailAddress != null)
         {
             // Add the user's email address
-            identity.AddClaim(new Claim(Claims.Email, user.EmailAddress).SetDestinations([Destinations.IdentityToken]));
+            identity.AddClaim(new Claim(Claims.Email, userInfo.EmailAddress).SetDestinations([Destinations.IdentityToken]));
             identity.AddClaim(new Claim(Claims.EmailVerified, true.ToString()).SetDestinations([Destinations.IdentityToken]));
         }
 
-        if (context.Request.HasScope(Scopes.Phone) && user.VoiceTelephoneNumber != null)
+        if (context.Request.HasScope(Scopes.Phone) && userInfo.VoiceTelephoneNumber != null)
         {
             // Add user's phone number
-            identity.AddClaim(new Claim(Claims.PhoneNumber, user.VoiceTelephoneNumber).SetDestinations([Destinations.IdentityToken]));
+            identity.AddClaim(new Claim(Claims.PhoneNumber, userInfo.VoiceTelephoneNumber).SetDestinations([Destinations.IdentityToken]));
             identity.AddClaim(new Claim(Claims.PhoneNumberVerified, true.ToString()).SetDestinations([Destinations.IdentityToken]));
         }
 
         // Add user's roles (from user groups)
         if (context.Request.HasScope(Scopes.Roles))
         {
+            using PrincipalSearchResult<Principal> groups = userInfo.GetGroups();
             identity.AddClaims(
-                user.GetGroups().Select(group => new Claim(Claims.Role, group.Name).SetDestinations([Destinations.IdentityToken]))
+                groups.Select(group => new Claim(Claims.Role, group.Name).SetDestinations([Destinations.IdentityToken]))
             );
         }
 

@@ -49,7 +49,7 @@ Os escopos suportados são `openid`, `profile`, `email`, `phone` e `roles`. As c
 | `phone` | `phone_number`, `phone_number_verified` | ID token |
 | `roles` | `role` (uma para cada grupo do usuário) | ID token |
 
-Com exceção de `name`, claims cujo atributo correspondente esteja vazio no diretório (por exemplo, usuário sem telefone) não são emitidas.
+Claims cujo atributo correspondente esteja vazio no diretório (por exemplo, usuário sem nome de exibição ou sem telefone) não são emitidas.
 
 ## Configuração
 
@@ -93,6 +93,8 @@ A opção `Domain` define onde os dados do usuário autenticado são pesquisados
 |---|---|---|
 | vazio | Contas locais da máquina | SID do usuário |
 | preenchido | Active Directory do domínio informado | GUID do objeto do usuário no AD |
+
+O usuário autenticado é localizado pelo seu SID, e não pelo nome. Por isso, ele precisa pertencer ao domínio configurado (ou ser uma conta local da máquina, quando `Domain` está vazio). Usuários de outros domínios, mesmo que confiáveis, e usuários de domínio quando `Domain` está vazio são recusados com `access_denied`.
 
 ### Chaves de criptografia
 
