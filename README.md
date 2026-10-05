@@ -47,7 +47,7 @@ Os escopos suportados são `openid`, `profile`, `email`, `phone` e `roles`. As c
 | `profile` | `name`, `given_name`, `family_name`, `employee_id` | ID token |
 | `profile` | `email`, `email_verified` | ID token |
 | `phone` | `phone_number`, `phone_number_verified` | ID token |
-| `roles` | `role` (uma para cada grupo do usuário) | ID token |
+| `roles` | `role` (uma para cada grupo de segurança do usuário, incluindo grupos aninhados) | ID token |
 
 Claims cujo atributo correspondente esteja vazio no diretório (por exemplo, usuário sem nome de exibição ou sem telefone) não são emitidas.
 

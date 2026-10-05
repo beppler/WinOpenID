@@ -127,7 +127,7 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
         // Add user's roles (from user groups)
         if (context.Request.HasScope(Scopes.Roles))
         {
-            using PrincipalSearchResult<Principal> groups = userInfo.GetGroups();
+            using PrincipalSearchResult<Principal> groups = userInfo.GetAuthorizationGroups();
             identity.AddClaims(
                 groups.Select(group => new Claim(Claims.Role, group.Name).SetDestinations([Destinations.IdentityToken]))
             );
