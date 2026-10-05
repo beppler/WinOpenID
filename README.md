@@ -238,6 +238,53 @@ Como as chaves são fixas, os tokens emitidos continuam válidos após reinicial
 
 A seção `Logging` segue a [configuração padrão de logs do ASP.NET Core](https://learn.microsoft.com/aspnet/core/fundamentals/logging/).
 
+### Auditoria
+
+O servidor registra as emissões e as recusas na categoria de log `WinOpenID.Audit`:
+
+| Evento | Nível | Campos |
+|---|---|---|
+| *Authorization code* emitido | `Information` | usuário, `sub`, `client_id`, `redirect_uri`, escopos, audiências, IP e porta de origem |
+| Tokens emitidos (troca do *authorization code*) | `Information` | usuário, `sub`, `client_id`, escopos, audiências, IP e porta de origem |
+| Requisição de autorização recusada | `Warning` | `client_id`, `redirect_uri`, escopos, `error`, `error_description`, IP e porta de origem |
+| Requisição de token recusada | `Warning` | `client_id`, `grant_type`, `error`, `error_description`, IP e porta de origem |
+| Usuário autenticado pelo Windows não encontrado no diretório | `Warning` | nome Windows, SID, `client_id`, IP e porta de origem |
+
+O endereço de origem é registrado com a porta (por exemplo `203.0.113.10:51234` ou `[2001:db8::1]:51234`), porque muitos provedores de acesso compartilham o mesmo IP público entre vários clientes (CGNAT), diferenciando-os pela faixa de portas. Para identificar um cliente nesses casos, o provedor costuma exigir o IP, a porta e o horário exato da conexão, então o provedor de log deve registrar o horário de cada evento. Se o servidor estiver atrás de um proxy reverso ou balanceador de carga, o endereço registrado é o do proxy, a menos que o [Forwarded Headers Middleware](https://learn.microsoft.com/aspnet/core/host-and-deploy/proxy-load-balancer) esteja configurado; e mesmo assim só há porta se o proxy a encaminhar.
+
+As recusas incluem tanto as feitas pelo WinOpenID (cliente não cadastrado, `redirect_uri` ou escopo não permitido) quanto as do OpenIddict (*authorization code* expirado, *code verifier* inválido etc.). Como o mesmo *authorization code* pode ser trocado mais de uma vez dentro do prazo de validade, dois eventos de tokens emitidos para o mesmo usuário e cliente em menos de 1 minuto podem indicar o reaproveitamento de um código. *Authorization codes*, tokens, *code verifiers* e chaves nunca são registrados.
+
+A categoria pode ser habilitada em produção sem habilitar os demais logs em `Information`:
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Warning",
+      "WinOpenID.Audit": "Information"
+    }
+  }
+}
+```
+
+No IIS a saída do console é descartada. No Windows, o ASP.NET Core já registra o provedor *EventLog*, que por padrão grava apenas `Warning` ou acima no *Application* do Visualizador de Eventos. Para gravar também os eventos de emissão:
+
+```json
+{
+  "Logging": {
+    "EventLog": {
+      "LogLevel": {
+        "WinOpenID.Audit": "Information"
+      }
+    }
+  }
+}
+```
+
+Também é possível usar qualquer outro provedor de log compatível com o ASP.NET Core.
+
+> **Atenção:** os registros de auditoria contêm dados pessoais (nome de login, endereço IP e porta) e devem seguir a política de retenção e de proteção de dados da organização.
+
 ### Hospedagem no IIS
 
 No IIS 10 ou superior, as chaves podem ser configuradas sem arquivos da aplicação, como variáveis de ambiente do *Application Pool*. Elas ficam gravadas no `applicationHost.config`, fora da pasta da aplicação, e só o processo daquele pool as recebe. Por exemplo, para um pool chamado `WinOpenID`:

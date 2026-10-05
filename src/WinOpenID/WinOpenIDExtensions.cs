@@ -84,6 +84,13 @@ public static class WinOpenIDExtensions
 
                 // Event handler for validating token requests
                 options.AddEventHandler<ValidateTokenRequestContext>(builder => builder.UseSingletonHandler<WinOpenIDServerHandler>());
+
+                // Event handler for token requests (only logs the issued tokens: OpenIddict handles the code redemption)
+                options.AddEventHandler<HandleTokenRequestContext>(builder => builder.UseSingletonHandler<WinOpenIDServerHandler>());
+
+                // Event handlers to generate audit information
+                options.AddEventHandler<ApplyAuthorizationResponseContext>(builder => builder.UseSingletonHandler<WinOpenIDServerHandler>().SetOrder(int.MinValue));
+                options.AddEventHandler<ApplyTokenResponseContext>(builder => builder.UseSingletonHandler<WinOpenIDServerHandler>().SetOrder(int.MinValue));
             })
             .AddValidation(options =>
             {
