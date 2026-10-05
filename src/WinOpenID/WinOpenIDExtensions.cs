@@ -19,15 +19,20 @@ public static class WinOpenIDExtensions
 
                 options.EnableDegradedMode(); // We'll handle protocol stuff ourselves; don't want user stores or such
 
-                // This OpenIddict server is stateless; however, make sure IIS doesn't dispose of the application too often (ie, via app pool recycles or shut downs due to inactivity)
-                options.AddEphemeralSigningKey()
-                       .AddEphemeralEncryptionKey();
-
                 // TODO: find a better way to use configuration here
                 var serverOptions = configuration.GetSection(WinOpenIDOptions.Server).Get<WinOpenIDOptions>();
 
+                options.AddEphemeralEncryptionKey();
+
                 if (!serverOptions.EncryptAccessToken)
+                {
                     options.DisableAccessTokenEncryption();
+                }
+
+                if (serverOptions.SigningKeys.Length == 0)
+                    options.AddEphemeralSigningKey();
+                else
+                    options.AddSigningKeys(serverOptions.GetSigningKeys());
 
                 options.SetAuthorizationEndpointUris("/connect/authorize")
                        .SetTokenEndpointUris("/connect/token");

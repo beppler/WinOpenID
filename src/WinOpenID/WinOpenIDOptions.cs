@@ -1,4 +1,7 @@
-﻿namespace WinOpenID;
+﻿using Microsoft.IdentityModel.Tokens;
+using System.Security.Cryptography;
+
+namespace WinOpenID;
 
 public class WinOpenIDOptions
 {
@@ -21,6 +24,13 @@ public class WinOpenIDOptions
         }
     }
 
+    private string[] signingKeys = [];
+    public string[] SigningKeys
+    {
+        get => signingKeys;
+        set => signingKeys = value ?? [];
+    }
+
     public string[] GetAllowedCorsOrigins() => allowedCorsOrigins;
 
     // Check if the scheme, server and path of the redirect_uri are whitelisted on AllowedHosts
@@ -33,6 +43,16 @@ public class WinOpenIDOptions
 
         string address = NormalizeRedirectUri(uri);
         return allowedRedirectUris.Any(allowed => string.Equals(address, allowed, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public IEnumerable<SecurityKey> GetSigningKeys()
+    {
+        return signingKeys.Select(value =>
+        {
+            var key = ECDsa.Create();
+            key.ImportECPrivateKey(Convert.FromBase64String(value), out int _);
+            return new ECDsaSecurityKey(key);
+        });
     }
 
     public string Domain { get; set; }
