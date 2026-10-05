@@ -20,14 +20,15 @@ public class WinOpenIDOptions
                 allowedRedirectUris = [];
                 return;
             }
-            allowedCorsOrigins = [.. value.Select(x => NormalizeOrigin(new Uri(x)))];
-            allowedRedirectUris = [.. value.Select(x => NormalizeRedirectUri(new Uri(x)))];
+            Uri[] uris = [.. value.Select(ParseRedirectUri)];
+            allowedCorsOrigins = [.. uris.Select(NormalizeOrigin)];
+            allowedRedirectUris = [.. uris.Select(NormalizeRedirectUri)];
         }
     }
 
     public string[] GetAllowedCorsOrigins() => allowedCorsOrigins;
 
-    // Check if the scheme, server and path of the redirect_uri are whitelisted on AllowedHosts
+    // Check if the redirect_uri exactly matches one of the AllowedRedirectUris (RFC 9700, section 4.1.3)
     public bool IsAllowedRedirectUri(string redirectUri)
     {
         if (!Uri.TryCreate(redirectUri, UriKind.Absolute, out Uri uri))
@@ -36,7 +37,7 @@ public class WinOpenIDOptions
         }
 
         string address = NormalizeRedirectUri(uri);
-        return allowedRedirectUris.Any(allowed => string.Equals(address, allowed, StringComparison.OrdinalIgnoreCase));
+        return allowedRedirectUris.Any(allowed => string.Equals(address, allowed, StringComparison.Ordinal));
     }
 
     public Uri Issuer { get; set; }
@@ -80,6 +81,25 @@ public class WinOpenIDOptions
     private static string NormalizeOrigin(Uri uri)
         => uri.GetLeftPart(UriPartial.Authority);
 
+    // AbsoluteUri only normalizes the scheme, host, default port and escaping: path and query are compared as is
     private static string NormalizeRedirectUri(Uri uri)
-        => uri.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.Unescaped);
+        => uri.AbsoluteUri;
+
+    // Redirect URIs must be absolute, without fragment and use HTTPS (HTTP is only allowed on loopback addresses)
+    private static Uri ParseRedirectUri(string value)
+    {
+        Uri uri = new(value, UriKind.Absolute);
+
+        if (uri.Scheme != Uri.UriSchemeHttps && !(uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback))
+        {
+            throw new ArgumentException($"The redirect URI '{value}' must use HTTPS (HTTP is only allowed on loopback addresses).");
+        }
+
+        if (!string.IsNullOrEmpty(uri.Fragment))
+        {
+            throw new ArgumentException($"The redirect URI '{value}' must not contain a fragment.");
+        }
+
+        return uri;
+    }
 }

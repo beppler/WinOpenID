@@ -82,10 +82,14 @@ dotnet WinOpenID.dll --Server:Domain=my.ad.domain.com
 
 ### URIs de retorno e CORS
 
-Uma requisição só é aceita se o `redirect_uri` informado corresponder a uma das URIs de `AllowedRedirectUris`. A comparação considera esquema, servidor, porta e caminho, sem diferenciar maiúsculas de minúsculas; a *query string* e o fragmento são ignorados. Por exemplo, com `https://app.example.com/callback` configurado:
+Uma requisição só é aceita se o `redirect_uri` informado for exatamente igual a uma das URIs de `AllowedRedirectUris`, como exigem o [OAuth 2.0 Security BCP (RFC 9700)](https://www.rfc-editor.org/rfc/rfc9700) e o OAuth 2.1. A comparação inclui o caminho e a *query string* e diferencia maiúsculas de minúsculas no caminho; apenas o esquema e o servidor são comparados sem diferenciar maiúsculas, e a porta padrão é desconsiderada. Por exemplo, com `https://app.example.com/callback` configurado:
 
-- `https://app.example.com/callback?x=1` é aceito;
-- `https://app.example.com/outro` e `http://app.example.com/callback` são recusados.
+- `https://app.example.com/callback` e `https://APP.example.com:443/callback` são aceitos;
+- `https://app.example.com/callback?x=1`, `https://app.example.com/Callback`, `https://app.example.com/callback/` e `http://app.example.com/callback` são recusados.
+
+Se um cliente precisar de parâmetros na URI de retorno, a URI completa, com a *query string*, deve ser configurada. Isso impede que um atacante acrescente parâmetros ao `redirect_uri` para tentar desviar o *authorization code* a partir da página de retorno da aplicação.
+
+As URIs configuradas devem ser absolutas, não podem ter fragmento (`#...`) e devem usar `https`; `http` só é aceito em endereços de *loopback* (`localhost`, `127.0.0.1`, `[::1]`). Uma URI inválida impede a inicialização do servidor.
 
 As origens (esquema, servidor e porta) dessas mesmas URIs também são liberadas no CORS para requisições `GET` e `POST`, permitindo que aplicações SPA acessem o endpoint de token, o documento de descoberta e o conjunto de chaves públicas (JWKS).
 
