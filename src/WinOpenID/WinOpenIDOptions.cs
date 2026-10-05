@@ -24,13 +24,6 @@ public class WinOpenIDOptions
         }
     }
 
-    private string[] signingKeys = [];
-    public string[] SigningKeys
-    {
-        get => signingKeys;
-        set => signingKeys = value ?? [];
-    }
-
     public string[] GetAllowedCorsOrigins() => allowedCorsOrigins;
 
     // Check if the scheme, server and path of the redirect_uri are whitelisted on AllowedHosts
@@ -45,7 +38,27 @@ public class WinOpenIDOptions
         return allowedRedirectUris.Any(allowed => string.Equals(address, allowed, StringComparison.OrdinalIgnoreCase));
     }
 
-    public IEnumerable<SecurityKey> GetSigningKeys()
+    private string[] encryptionKeys = [];
+    public string[] EncryptionKeys
+    {
+        get => encryptionKeys;
+        set { encryptionKeys = value ?? []; }
+    }
+
+    public IEnumerable<SymmetricSecurityKey> GetEncryptionKeys()
+    {
+        return encryptionKeys.Select(value => new SymmetricSecurityKey(Convert.FromBase64String(value)));
+    }
+
+    private string[] signingKeys = [];
+    public string[] SigningKeys
+    {
+        get => signingKeys;
+        set => signingKeys = value ?? [];
+    }
+
+
+    public IEnumerable<ECDsaSecurityKey> GetSigningKeys()
     {
         return signingKeys.Select(value =>
         {
