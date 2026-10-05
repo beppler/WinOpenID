@@ -2,4 +2,169 @@
 
 Servidor OpenID Connect simples com autenticação integrada do Windows.
 
-Para testar o servidor pode ser usado o [OpenID Connect Debugger](https://oidcdebugger.com/debug).
+O WinOpenID usa o [OpenIddict](https://documentation.openiddict.com/) em *degraded mode* (sem banco de dados, sem cadastro de clientes ou usuários) para emitir tokens OpenID Connect a partir da autenticação integrada do Windows (Negotiate: Kerberos/NTLM). Os dados do usuário (nome, e-mail, telefone, grupos etc.) são obtidos do Active Directory ou das contas locais da máquina por meio de `System.DirectoryServices.AccountManagement`.
+
+## Requisitos
+
+- Windows (o projeto tem como alvo `net10.0-windows`).
+- [.NET 10 SDK](https://dotnet.microsoft.com/download).
+- Autenticação Windows habilitada no servidor web: Kestrel (já configurado via `AddNegotiate()`), IIS ou IIS Express (veja `src/WinOpenID/Properties/launchSettings.json`).
+- Para usar contas de domínio, a máquina deve fazer parte do domínio do Active Directory.
+
+## Executando
+
+```shell
+dotnet run --project src/WinOpenID
+```
+
+O perfil `WinOpenID` escuta em `https://localhost:5001` e `http://localhost:5000`, com `ASPNETCORE_ENVIRONMENT=Development`. Também há um perfil `IIS Express`.
+
+O endereço raiz (`/`) redireciona para o documento de descoberta do OpenID Connect.
+
+## Endpoints
+
+| Endpoint | Descrição |
+|---|---|
+| `/.well-known/openid-configuration` | Documento de descoberta (*discovery*) do OpenID Connect. |
+| `/.well-known/jwks` | Chaves públicas usadas para validar a assinatura dos tokens. |
+| `/connect/authorize` | Endpoint de autorização: autentica o usuário via Windows e emite o *authorization code*. |
+| `/connect/token` | Endpoint de token: troca o *authorization code* pelos tokens. |
+
+## Fluxo suportado
+
+- Somente **Authorization Code** com **PKCE obrigatório**, aceitando apenas o método `S256` (o método `plain` é recusado).
+- Os clientes são públicos: qualquer `client_id` é aceito e não há autenticação de cliente (`client_secret`). O controle de acesso é feito pela lista de URIs de retorno permitidas (`AllowedRedirectUris`).
+- O parâmetro `prompt` aceita apenas o valor `none`.
+- O *implicit flow* e os demais *grant types* (`client_credentials`, `password`, `refresh_token` etc.) não são suportados.
+
+## Configuração
+
+As opções do servidor ficam na seção `Server` da configuração do ASP.NET Core. Normalmente são definidas nos arquivos `appsettings.json` / `appsettings.{Ambiente}.json`, mas podem ser informadas por qualquer fonte de configuração padrão, como variáveis de ambiente ou linha de comando:
+
+```shell
+# Variáveis de ambiente (arrays usam o índice como chave)
+set Server__Domain=my.ad.domain.com
+set Server__AllowedRedirectUris__0=https://app.example.com/callback
+set Server__SigningKeys__0=MIGkAgEBBDD...
+
+# Linha de comando
+dotnet WinOpenID.dll --Server:Domain=my.ad.domain.com
+```
+
+### Opções
+
+| Opção | Tipo | Padrão | Descrição |
+|---|---|---|---|
+| `AllowedRedirectUris` | `string[]` | `[]` | URIs de retorno (`redirect_uri`) permitidas. Veja [URIs de retorno e CORS](#uris-de-retorno-e-cors). |
+| `Domain` | `string` | *(vazio)* | Domínio do Active Directory onde os usuários são pesquisados. Se vazio, são usadas as contas locais da máquina. |
+| `EncryptionKeys` | `string[]` | `[]` | Chaves simétricas usadas para criptografar os tokens. Se vazio, é usada uma chave efêmera. Veja [Chaves de criptografia](#chaves-de-criptografia). |
+| `EncryptAccessToken` | `bool` | `true` | Indica se o *access token* deve ser criptografado. Com `false`, o *access token* é emitido como um JWT apenas assinado, que pode ser lido e validado por APIs de terceiros. |
+| `SigningKeys` | `string[]` | `[]` | Chaves privadas ECDSA usadas para assinar os tokens. Se vazio, é usada uma chave efêmera. Veja [Chaves de assinatura](#chaves-de-assinatura). |
+
+### URIs de retorno e CORS
+
+Uma requisição só é aceita se o `redirect_uri` informado corresponder a uma das URIs de `AllowedRedirectUris`. A comparação considera esquema, servidor, porta e caminho, sem diferenciar maiúsculas de minúsculas; a *query string* e o fragmento são ignorados. Por exemplo, com `https://app.example.com/callback` configurado:
+
+- `https://app.example.com/callback?x=1` é aceito;
+- `https://app.example.com/outro` e `http://app.example.com/callback` são recusados.
+
+As origens (esquema, servidor e porta) dessas mesmas URIs também são liberadas no CORS para requisições `GET` e `POST`, permitindo que aplicações SPA acessem o endpoint de token e o documento de descoberta.
+
+### Domínio e identificador do usuário
+
+A opção `Domain` define onde os dados do usuário autenticado são pesquisados e também o valor da claim `sub`:
+
+| `Domain` | Origem dos usuários | Valor de `sub` |
+|---|---|---|
+| vazio | Contas locais da máquina | SID do usuário |
+| preenchido | Active Directory do domínio informado | GUID do objeto do usuário no AD |
+
+### Chaves de criptografia
+
+As chaves de `EncryptionKeys` são chaves simétricas codificadas em Base64, com 256 bits (32 bytes). Elas protegem o *authorization code* e, quando `EncryptAccessToken` é `true`, o *access token*. Podem ser geradas, por exemplo, com:
+
+```shell
+openssl rand -base64 32
+```
+
+```powershell
+[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+Assim como nas chaves de assinatura, a primeira chave é usada para criptografar e as demais servem apenas para descriptografar, permitindo a rotação.
+
+### Chaves de assinatura
+
+As chaves de `SigningKeys` são chaves privadas de curva elíptica (ECDSA) no formato EC (SEC 1, DER) codificadas em Base64. Elas podem ser geradas com o script `scripts/signkeygen.cs`:
+
+```shell
+dotnet scripts/signkeygen.cs
+dotnet scripts/signkeygen.cs --curve nistP256
+```
+
+A opção `--curve` (ou `-c`) aceita `nistP256`, `nistP384` (padrão) e `nistP521`.
+
+É possível informar mais de uma chave para fazer a rotação: a primeira é usada para assinar novos tokens e todas são publicadas em `/.well-known/jwks`, de forma que tokens assinados com chaves anteriores continuam válidos.
+
+### Chaves efêmeras
+
+Quando `SigningKeys` ou `EncryptionKeys` não são configuradas, o servidor gera chaves efêmeras a cada inicialização. Isso é prático para testes, mas faz com que todos os tokens emitidos anteriormente se tornem inválidos quando a aplicação é reiniciada, e não funciona com múltiplas instâncias do servidor. Em produção, configure chaves fixas.
+
+> **Atenção:** as chaves presentes em `appsettings.Development.json` são públicas e servem apenas para desenvolvimento. Em produção, gere novas chaves e mantenha-as fora do controle de versão (variáveis de ambiente, *user secrets*, cofre de segredos etc.). Os arquivos `appsettings.*.json` não são copiados na publicação (`CopyToPublishDirectory="Never"` em `WinOpenID.csproj`).
+
+### Exemplo
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Warning"
+    }
+  },
+  "Server": {
+    "AllowedRedirectUris": [
+      "https://app.example.com/callback",
+      "https://oidcdebugger.com/debug"
+    ],
+    "Domain": "my.ad.domain.com",
+    "SigningKeys": [
+      "<chave ECDSA em Base64 gerada com scripts/signkeygen.cs>"
+    ],
+    "EncryptionKeys": [
+      "<chave simétrica de 32 bytes em Base64>"
+    ],
+    "EncryptAccessToken": false
+  }
+}
+```
+
+A seção `Logging` segue a [configuração padrão de logs do ASP.NET Core](https://learn.microsoft.com/aspnet/core/fundamentals/logging/).
+
+## Escopos e claims
+
+Os escopos suportados são `openid`, `profile`, `email`, `phone` e `roles`. As claims emitidas dependem dos escopos solicitados:
+
+| Escopo | Claims | Token |
+|---|---|---|
+| *(sempre)* | `sub`, `username`, `preferred_username` | ID token e access token |
+| `profile` | `name`, `given_name`, `family_name`, `employee_id` | ID token |
+| `profile` | `email`, `email_verified` | ID token |
+| `phone` | `phone_number`, `phone_number_verified` | ID token |
+| `roles` | `role` (uma para cada grupo do usuário) | ID token |
+
+Com exceção de `name`, claims cujo atributo correspondente esteja vazio no diretório (por exemplo, usuário sem telefone) não são emitidas.
+
+## Testando
+
+Para testar o servidor pode ser usado o [OpenID Connect Debugger](https://oidcdebugger.com/debug):
+
+1. Inicie o servidor no ambiente `Development` (as URIs `https://oidcdebugger.com/debug` e `https://jwt.io/` já estão liberadas em `appsettings.Development.json`).
+2. Informe `https://localhost:5001/connect/authorize` como *Authorize URI*, qualquer valor como *Client ID* e o escopo `openid` (e, opcionalmente, `profile phone roles`).
+3. Selecione o *response type* `code` e habilite o PKCE com o método `S256`.
+4. Após a autenticação, use o *authorization code* e o *code verifier* para obter os tokens em `https://localhost:5001/connect/token`.
+
+O conteúdo dos tokens assinados pode ser inspecionado em [jwt.io](https://jwt.io/).
+
+## Créditos e licença
+
+Baseado em [OpenIddict-WindowsAuth](https://github.com/auroris/OpenIddict-WindowsAuth). Distribuído sob os termos da licença descrita em [LICENSE](LICENSE).
