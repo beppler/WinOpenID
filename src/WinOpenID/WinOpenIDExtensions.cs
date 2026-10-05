@@ -43,6 +43,10 @@ public static class WinOpenIDExtensions
                 options.AllowAuthorizationCodeFlow()
                        .RequireProofKeyForCodeExchange();
 
+                // In degraded mode there is no token storage, so an authorization code can't be revoked after use
+                // and may be redeemed again until it expires: keep its lifetime short (the default is 5 minutes)
+                options.SetAuthorizationCodeLifetime(TimeSpan.FromMinutes(1));
+
                 // Tell OpenIddict that we support these scopes
                 options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.Phone, Scopes.Roles);
 

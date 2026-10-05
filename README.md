@@ -34,6 +34,7 @@ O endereço raiz (`/`) redireciona para o documento de descoberta do OpenID Conn
 
 - Somente **Authorization Code** com **PKCE obrigatório**, aceitando apenas o método `S256` (o método `plain` é recusado).
 - Os clientes são públicos: qualquer `client_id` é aceito e não há autenticação de cliente (`client_secret`). O controle de acesso é feito pela lista de URIs de retorno permitidas (`AllowedRedirectUris`).
+- O *authorization code* é válido por apenas 1 minuto. Como o servidor não tem banco de dados, ele não consegue registrar que um código já foi usado, e o mesmo código pode ser trocado por tokens mais de uma vez dentro desse prazo (o PKCE exige o *code verifier* em cada troca).
 - O parâmetro `prompt` não é suportado: a autenticação integrada do Windows não permite forçar um novo login nem garantir uma autenticação sem interação com o usuário. Os clientes não devem enviá-lo.
 - O *implicit flow* e os demais *grant types* (`client_credentials`, `password`, `refresh_token` etc.) não são suportados.
 
