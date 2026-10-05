@@ -18,6 +18,7 @@ public class WinOpenIDOptions
             {
                 allowedCorsOrigins = [];
                 allowedRedirectUris = [];
+                return;
             }
             allowedCorsOrigins = [.. value.Select(x => NormalizeOrigin(new Uri(x)))];
             allowedRedirectUris = [.. value.Select(x => NormalizeRedirectUri(new Uri(x)))];
