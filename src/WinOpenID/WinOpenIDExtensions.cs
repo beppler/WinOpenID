@@ -58,6 +58,11 @@ public static class WinOpenIDExtensions
                     // Only accept S256 for PKCE: "plain" exposes the code verifier in the authorization request
                     openIddictOptions.CodeChallengeMethods.Clear();
                     openIddictOptions.CodeChallengeMethods.Add(CodeChallengeMethods.Sha256);
+
+                    // Only the authorization code flow is supported: "fragment" is a leftover from the implicit flow
+                    openIddictOptions.ResponseModes.Clear();
+                    openIddictOptions.ResponseModes.Add(ResponseModes.Query);
+                    openIddictOptions.ResponseModes.Add(ResponseModes.FormPost);
                 });
 
                 // Event handler for validating authorization requests
