@@ -37,6 +37,20 @@ O endereço raiz (`/`) redireciona para o documento de descoberta do OpenID Conn
 - O parâmetro `prompt` aceita apenas o valor `none`.
 - O *implicit flow* e os demais *grant types* (`client_credentials`, `password`, `refresh_token` etc.) não são suportados.
 
+## Escopos e claims
+
+Os escopos suportados são `openid`, `profile`, `email`, `phone` e `roles`. As claims emitidas dependem dos escopos solicitados:
+
+| Escopo | Claims | Token |
+|---|---|---|
+| *(sempre)* | `sub`, `username`, `preferred_username` | ID token e access token |
+| `profile` | `name`, `given_name`, `family_name`, `employee_id` | ID token |
+| `profile` | `email`, `email_verified` | ID token |
+| `phone` | `phone_number`, `phone_number_verified` | ID token |
+| `roles` | `role` (uma para cada grupo do usuário) | ID token |
+
+Com exceção de `name`, claims cujo atributo correspondente esteja vazio no diretório (por exemplo, usuário sem telefone) não são emitidas.
+
 ## Configuração
 
 As opções do servidor ficam na seção `Server` da configuração do ASP.NET Core. Normalmente são definidas nos arquivos `appsettings.json` / `appsettings.{Ambiente}.json`, mas podem ser informadas por qualquer fonte de configuração padrão, como variáveis de ambiente ou linha de comando:
@@ -46,6 +60,7 @@ As opções do servidor ficam na seção `Server` da configuração do ASP.NET C
 set Server__Domain=my.ad.domain.com
 set Server__AllowedRedirectUris__0=https://app.example.com/callback
 set Server__SigningKeys__0=MIGkAgEBBDD...
+set Server__EncryptionKeys__0=q2Vx...
 
 # Linha de comando
 dotnet WinOpenID.dll --Server:Domain=my.ad.domain.com
@@ -57,9 +72,9 @@ dotnet WinOpenID.dll --Server:Domain=my.ad.domain.com
 |---|---|---|---|
 | `AllowedRedirectUris` | `string[]` | `[]` | URIs de retorno (`redirect_uri`) permitidas. Veja [URIs de retorno e CORS](#uris-de-retorno-e-cors). |
 | `Domain` | `string` | *(vazio)* | Domínio do Active Directory onde os usuários são pesquisados. Se vazio, são usadas as contas locais da máquina. |
-| `EncryptionKeys` | `string[]` | `[]` | Chaves simétricas usadas para criptografar os tokens. Se vazio, é usada uma chave efêmera. Veja [Chaves de criptografia](#chaves-de-criptografia). |
+| `EncryptionKeys` | `string[]` | `[]` | **Obrigatório.** Chaves simétricas usadas para criptografar os tokens. Veja [Chaves de criptografia](#chaves-de-criptografia). |
 | `EncryptAccessToken` | `bool` | `true` | Indica se o *access token* deve ser criptografado. Com `false`, o *access token* é emitido como um JWT apenas assinado, que pode ser lido e validado por APIs de terceiros. |
-| `SigningKeys` | `string[]` | `[]` | Chaves privadas ECDSA usadas para assinar os tokens. Se vazio, é usada uma chave efêmera. Veja [Chaves de assinatura](#chaves-de-assinatura). |
+| `SigningKeys` | `string[]` | `[]` | **Obrigatório.** Chaves privadas ECDSA usadas para assinar os tokens. Veja [Chaves de assinatura](#chaves-de-assinatura). |
 
 ### URIs de retorno e CORS
 
@@ -106,13 +121,13 @@ A opção `--curve` (ou `-c`) aceita `nistP256`, `nistP384` (padrão) e `nistP52
 
 É possível informar mais de uma chave para fazer a rotação: a primeira é usada para assinar novos tokens e todas são publicadas em `/.well-known/jwks`, de forma que tokens assinados com chaves anteriores continuam válidos.
 
-### Chaves efêmeras
+### Chaves obrigatórias
 
-Quando `SigningKeys` ou `EncryptionKeys` não são configuradas, o servidor gera chaves efêmeras a cada inicialização. Isso é prático para testes, mas faz com que todos os tokens emitidos anteriormente se tornem inválidos quando a aplicação é reiniciada, e não funciona com múltiplas instâncias do servidor. Em produção, configure chaves fixas.
+O servidor não usa chaves efêmeras: é necessário configurar ao menos uma chave em `SigningKeys` e uma em `EncryptionKeys`, caso contrário o OpenIddict gera um erro de configuração. Como as chaves são fixas, os tokens emitidos continuam válidos após reinicializações e podem ser compartilhados entre múltiplas instâncias do servidor.
 
 > **Atenção:** as chaves presentes em `appsettings.Development.json` são públicas e servem apenas para desenvolvimento. Em produção, gere novas chaves e mantenha-as fora do controle de versão (variáveis de ambiente, *user secrets*, cofre de segredos etc.). Os arquivos `appsettings.*.json` não são copiados na publicação (`CopyToPublishDirectory="Never"` em `WinOpenID.csproj`).
 
-### Exemplo
+### Exemplo de configuração
 
 ```json
 {
@@ -140,19 +155,21 @@ Quando `SigningKeys` ou `EncryptionKeys` não são configuradas, o servidor gera
 
 A seção `Logging` segue a [configuração padrão de logs do ASP.NET Core](https://learn.microsoft.com/aspnet/core/fundamentals/logging/).
 
-## Escopos e claims
+### Hospedagem no IIS
 
-Os escopos suportados são `openid`, `profile`, `email`, `phone` e `roles`. As claims emitidas dependem dos escopos solicitados:
+No IIS 10 ou superior, as chaves podem ser configuradas sem arquivos da aplicação, como variáveis de ambiente do *Application Pool*. Elas ficam gravadas no `applicationHost.config`, fora da pasta da aplicação, e só o processo daquele pool as recebe. Por exemplo, para um pool chamado `WinOpenID`:
 
-| Escopo | Claims | Token |
-|---|---|---|
-| *(sempre)* | `sub`, `username`, `preferred_username` | ID token e access token |
-| `profile` | `name`, `given_name`, `family_name`, `employee_id` | ID token |
-| `profile` | `email`, `email_verified` | ID token |
-| `phone` | `phone_number`, `phone_number_verified` | ID token |
-| `roles` | `role` (uma para cada grupo do usuário) | ID token |
+```cmd
+%windir%\system32\inetsrv\appcmd set config -section:system.applicationHost/applicationPools ^
+  /+"[name='WinOpenID'].environmentVariables.[name='Server__SigningKeys__0',value='MIGkAgEBBDD...']" /commit:apphost
 
-Com exceção de `name`, claims cujo atributo correspondente esteja vazio no diretório (por exemplo, usuário sem telefone) não são emitidas.
+%windir%\system32\inetsrv\appcmd set config -section:system.applicationHost/applicationPools ^
+  /+"[name='WinOpenID'].environmentVariables.[name='Server__EncryptionKeys__0',value='q2Vx...']" /commit:apphost
+```
+
+Para a rotação, adicione as demais chaves com os índices `__1`, `__2` etc. Também é possível fazer a configuração pelo IIS Manager: *Configuration Editor* → `system.applicationHost/applicationPools` → `environmentVariables` do pool.
+
+Depois de alterar as variáveis, recicle o *Application Pool*. Os valores ficam em texto puro no `applicationHost.config`, que por padrão só pode ser lido por administradores. Evite usar variáveis de ambiente do sistema: elas ficam visíveis para todos os processos da máquina e só são lidas pelo IIS depois de um `iisreset`.
 
 ## Testando
 

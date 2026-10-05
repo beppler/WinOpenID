@@ -22,18 +22,12 @@ public static class WinOpenIDExtensions
                 // TODO: find a better way to use configuration here
                 var serverOptions = configuration.GetSection(WinOpenIDOptions.Server).Get<WinOpenIDOptions>();
 
-                if (serverOptions.EncryptionKeys.Length == 0)
-                    options.AddEphemeralEncryptionKey();
-                else
-                    options.AddEncryptionKeys(serverOptions.GetEncryptionKeys());
+                options
+                    .AddEncryptionKeys(serverOptions.GetEncryptionKeys())
+                    .AddSigningKeys(serverOptions.GetSigningKeys());
 
                 if (!serverOptions.EncryptAccessToken)
                     options.DisableAccessTokenEncryption();
-
-                if (serverOptions.SigningKeys.Length == 0)
-                    options.AddEphemeralSigningKey();
-                else
-                    options.AddSigningKeys(serverOptions.GetSigningKeys());
 
                 options.SetAuthorizationEndpointUris("/connect/authorize")
                        .SetTokenEndpointUris("/connect/token");
