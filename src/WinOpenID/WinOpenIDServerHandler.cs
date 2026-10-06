@@ -5,10 +5,8 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using OpenIddict.Server;
-using System.DirectoryServices.AccountManagement;
 using System.Net;
 using System.Security.Claims;
-using System.Security.Principal;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 using static OpenIddict.Server.OpenIddictServerEvents;
 
@@ -22,11 +20,13 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
     public const string AuditCategory = "WinOpenID.Audit";
 
     private readonly WinOpenIDOptions serverOptions;
+    private readonly IUserDirectory userDirectory;
     private readonly ILogger auditLogger;
 
-    public WinOpenIDServerHandler(IOptions<WinOpenIDOptions> serverOptions, ILoggerFactory loggerFactory)
+    public WinOpenIDServerHandler(IOptions<WinOpenIDOptions> serverOptions, IUserDirectory userDirectory, ILoggerFactory loggerFactory)
     {
         this.serverOptions = serverOptions?.Value ?? throw new ArgumentNullException(nameof(serverOptions));
+        this.userDirectory = userDirectory ?? throw new ArgumentNullException(nameof(userDirectory));
         ArgumentNullException.ThrowIfNull(loggerFactory);
         auditLogger = loggerFactory.CreateLogger(AuditCategory);
     }
@@ -68,7 +68,7 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
 
         // Try to get the authentication of the current session via Windows Authentication
         AuthenticateResult result = await request.HttpContext.AuthenticateAsync(NegotiateDefaults.AuthenticationScheme);
-        if (result?.Principal is not WindowsPrincipal { Identity: WindowsIdentity windowsIdentity })
+        if (result?.Principal is not { Identity.IsAuthenticated: true } authenticatedUser)
         {
             // Run Windows authentication
             await request.HttpContext.ChallengeAsync(NegotiateDefaults.AuthenticationScheme);
@@ -76,21 +76,17 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
             return;
         }
 
-        // Set the directory service to the active directory domain or machine 
-        using PrincipalContext directoryService = serverOptions.UseDomain
-            ? new PrincipalContext(ContextType.Domain, serverOptions.Domain)
-            : new PrincipalContext(ContextType.Machine);
+        // The Windows identity provides the user's SID and login name as claims
+        string userName = authenticatedUser.Identity.Name;
+        string userSid = authenticatedUser.FindFirst(ClaimTypes.PrimarySid)?.Value;
 
         // Search by SID as SID is unique (user names can clash on trusted domains)
-        SecurityIdentifier userSid = windowsIdentity.User;
-        using UserPrincipal userInfo = userSid == null ? null : UserPrincipal.FindByIdentity(directoryService, IdentityType.Sid, userSid.Value);
-
-        // Defense in depth: make sure the account found is the authenticated one
-        if (userInfo == null || userInfo.Sid != userSid)
+        DirectoryUser userInfo = await userDirectory.FindBySidAsync(userSid, includeGroups: context.Request.HasScope(Scopes.Roles), context.CancellationToken);
+        if (userInfo == null)
         {
             auditLogger.LogWarning(
                 "User {UserName} ({Sid}) authenticated by Windows was not found in the directory, client {ClientId} (remote: {RemoteEndpoint}).",
-                windowsIdentity.Name, userSid?.Value, context.ClientId, GetRemoteEndpoint(context));
+                userName, userSid, context.ClientId, GetRemoteEndpoint(context));
             context.Reject(error: Errors.AccessDenied, description: "User is not found.");
             return;
         }
@@ -110,12 +106,12 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
         identity.SetResources(client.Audiences);
 
         // Add the name identifier claim; this is the user's unique identifier
-        string subject = serverOptions.UseDomain ? userInfo.Guid.ToString() : userInfo.Sid.Value;
+        string subject = serverOptions.UseDomain ? userInfo.Guid.ToString() : userInfo.Sid;
         identity.AddClaim(Claims.Subject, subject);
 
         // Add the user´s login name
-        identity.AddClaim(new Claim(Claims.Username, windowsIdentity.Name).SetDestinations([Destinations.AccessToken, Destinations.IdentityToken]));
-        identity.AddClaim(new Claim(Claims.PreferredUsername, windowsIdentity.Name).SetDestinations([Destinations.AccessToken, Destinations.IdentityToken]));
+        identity.AddClaim(new Claim(Claims.Username, userName).SetDestinations([Destinations.AccessToken, Destinations.IdentityToken]));
+        identity.AddClaim(new Claim(Claims.PreferredUsername, userName).SetDestinations([Destinations.AccessToken, Destinations.IdentityToken]));
 
         // Add user's profile fields
         if (context.Request.HasScope(Scopes.Profile))
@@ -150,19 +146,18 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
             identity.AddClaim(new Claim(Claims.EmailVerified, true.ToString()).SetDestinations([Destinations.IdentityToken]));
         }
 
-        if (context.Request.HasScope(Scopes.Phone) && userInfo.VoiceTelephoneNumber != null)
+        if (context.Request.HasScope(Scopes.Phone) && userInfo.PhoneNumber != null)
         {
             // Add user's phone number
-            identity.AddClaim(new Claim(Claims.PhoneNumber, userInfo.VoiceTelephoneNumber).SetDestinations([Destinations.IdentityToken]));
+            identity.AddClaim(new Claim(Claims.PhoneNumber, userInfo.PhoneNumber).SetDestinations([Destinations.IdentityToken]));
             identity.AddClaim(new Claim(Claims.PhoneNumberVerified, true.ToString()).SetDestinations([Destinations.IdentityToken]));
         }
 
         // Add user's roles (from user groups)
         if (context.Request.HasScope(Scopes.Roles))
         {
-            using PrincipalSearchResult<Principal> groups = userInfo.GetAuthorizationGroups();
             identity.AddClaims(
-                groups.Select(group => new Claim(Claims.Role, group.Name).SetDestinations([Destinations.IdentityToken]))
+                userInfo.Groups.Select(group => new Claim(Claims.Role, group).SetDestinations([Destinations.IdentityToken]))
             );
         }
 
@@ -176,7 +171,7 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
         {
             auditLogger.LogInformation(
                 "Authorization code issued to {UserName} ({Subject}) for client {ClientId} (redirect_uri: {RedirectUri}, scopes: {Scopes}, audiences: {Audiences}, remote: {RemoteEndpoint}).",
-                windowsIdentity.Name, subject, context.ClientId, context.Request.RedirectUri,
+                userName, subject, context.ClientId, context.Request.RedirectUri,
                 string.Join(' ', principal.GetScopes()), string.Join(' ', principal.GetResources()), GetRemoteEndpoint(context));
         }
     }

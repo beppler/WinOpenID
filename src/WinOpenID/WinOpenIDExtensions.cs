@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 using static OpenIddict.Server.OpenIddictServerEvents;
@@ -10,6 +11,9 @@ public static class WinOpenIDExtensions
     public static IServiceCollection AddWinOpenId(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<WinOpenIDOptions>(configuration.GetSection(WinOpenIDOptions.Server));
+
+        // Directory where the users authenticated by Windows are searched
+        services.TryAddSingleton<IUserDirectory, WindowsUserDirectory>();
 
         // Attach OpenIddict with a ton of options
         services.AddOpenIddict()

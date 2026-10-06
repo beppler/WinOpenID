@@ -326,7 +326,7 @@ The unit and integration tests (xUnit v3) are in `tests/WinOpenID.Tests` and can
 dotnet test
 ```
 
-The integration tests run the server in memory with a client and keys generated for the test. Windows authentication and Active Directory aren't used, so issuing the *authorization code* isn't covered: it is still tested manually as described above.
+The integration tests run the server in memory with a client and keys generated for the test and cover the whole flow, from the *authorization code* to the tokens. Windows authentication is simulated and the directory is replaced by a fake one (`IUserDirectory`), so the actual search in Active Directory or in the local accounts (`WindowsUserDirectory`) is still tested manually as described above.
 
 To measure code coverage (of the `WinOpenID` assembly only, as set in `tests/WinOpenID.Tests/coverage.settings.xml`) and generate an HTML report at `coverage-report/index.html`:
 

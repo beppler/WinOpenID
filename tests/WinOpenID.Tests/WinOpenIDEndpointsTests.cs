@@ -1,6 +1,10 @@
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using System.Net;
+using System.Security.Claims;
 using System.Text.Json;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -10,6 +14,8 @@ public class WinOpenIDEndpointsTests : IClassFixture<WinOpenIDFactory>
 {
     // PKCE S256 challenge of the verifier "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk" (RFC 7636, appendix B)
     private const string CodeChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+    private const string CodeVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+    private const string UserName = @"EXAMPLE\maria";
 
     private readonly WinOpenIDFactory factory;
     private readonly HttpClient client;
@@ -111,6 +117,115 @@ public class WinOpenIDEndpointsTests : IClassFixture<WinOpenIDFactory>
         JsonElement key = Assert.Single((await ReadJsonAsync(response)).GetProperty("keys").EnumerateArray());
         Assert.Equal("EC", key.GetProperty("kty").GetString());
         Assert.False(key.TryGetProperty("d", out _));
+    }
+
+    private Task<HttpResponseMessage> AuthorizeAsWindowsUserAsync(string sid, Dictionary<string, string> overrides = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, AuthorizeUri(overrides));
+        request.Headers.Add(WinOpenIDFactory.UserSidHeader, sid);
+        request.Headers.Add(WinOpenIDFactory.UserNameHeader, UserName);
+        return client.SendAsync(request, TestContext.Current.CancellationToken);
+    }
+
+    private Task<HttpResponseMessage> RedeemCodeAsync(string code, string codeVerifier = CodeVerifier)
+        => client.PostAsync("/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            [Parameters.GrantType] = GrantTypes.AuthorizationCode,
+            [Parameters.ClientId] = WinOpenIDFactory.ClientId,
+            [Parameters.RedirectUri] = WinOpenIDFactory.RedirectUri,
+            [Parameters.Code] = code,
+            [Parameters.CodeVerifier] = codeVerifier
+        }), TestContext.Current.CancellationToken);
+
+    private static Dictionary<string, StringValues> ParseRedirect(HttpResponseMessage response)
+    {
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Uri location = response.Headers.Location;
+        Assert.Equal(WinOpenIDFactory.RedirectUri, location.GetLeftPart(UriPartial.Path));
+        return QueryHelpers.ParseQuery(location.Query);
+    }
+
+    // Validates the signature, issuer, audience and lifetime of a token issued by the server
+    private async Task<ClaimsIdentityResult> ValidateTokenAsync(string token, string audience)
+    {
+        var keys = new WinOpenIDOptions { SigningKeys = [factory.SigningKey], EncryptionKeys = [factory.EncryptionKey] };
+        TokenValidationResult result = await new JsonWebTokenHandler().ValidateTokenAsync(token, new TokenValidationParameters
+        {
+            ValidIssuer = WinOpenIDFactory.Issuer,
+            ValidAudience = audience,
+            IssuerSigningKeys = keys.GetSigningKeys(),
+            TokenDecryptionKeys = keys.GetEncryptionKeys()
+        });
+        Assert.True(result.IsValid, result.Exception?.Message);
+        return new ClaimsIdentityResult(result.ClaimsIdentity);
+    }
+
+    private sealed record ClaimsIdentityResult(ClaimsIdentity Identity)
+    {
+        public string Get(string type) => Assert.Single(Identity.FindAll(type)).Value;
+
+        public string[] GetAll(string type) => [.. Identity.FindAll(type).Select(claim => claim.Value)];
+    }
+
+    [Fact]
+    public async Task AuthorizationCodeFlow_IssuesTokensWithTheDirectoryClaims()
+    {
+        // Authorization request authenticated by Windows: the code is returned to the client application
+        HttpResponseMessage response = await AuthorizeAsWindowsUserAsync(FakeUserDirectory.CompleteUser.Sid, new() { [Parameters.Scope] = "openid profile roles" });
+
+        var query = ParseRedirect(response);
+        Assert.Equal("state", query[Parameters.State]);
+        string code = query[Parameters.Code];
+        Assert.False(string.IsNullOrEmpty(code));
+        Assert.Contains(factory.GetAuditLog(), record => record.Level == LogLevel.Information && record.Message.StartsWith("Authorization code issued"));
+
+        // Code redeemed with the PKCE verifier
+        response = await RedeemCodeAsync(code);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        JsonElement tokens = await ReadJsonAsync(response);
+        Assert.Equal("Bearer", tokens.GetProperty(Parameters.TokenType).GetString());
+        Assert.Equal("openid profile roles", tokens.GetProperty(Parameters.Scope).GetString());
+        Assert.False(tokens.TryGetProperty(Parameters.RefreshToken, out _));
+        Assert.Contains(factory.GetAuditLog(), record => record.Level == LogLevel.Information && record.Message.StartsWith("Tokens issued"));
+
+        // The identity token is for the client application and has the profile claims
+        ClaimsIdentityResult idToken = await ValidateTokenAsync(tokens.GetProperty(Parameters.IdToken).GetString(), WinOpenIDFactory.ClientId);
+        Assert.Equal(FakeUserDirectory.CompleteUser.Sid, idToken.Get(Claims.Subject));
+        Assert.Equal(UserName, idToken.Get(Claims.PreferredUsername));
+        Assert.Equal("Maria da Silva", idToken.Get(Claims.Name));
+        Assert.Equal("12345", idToken.Get(WinOpenIDClaims.EmployeeId));
+        Assert.Equal(["Domain Users", "Developers"], idToken.GetAll(Claims.Role));
+        Assert.Equal("nonce", idToken.Get(Claims.Nonce));
+
+        // The access token (encrypted) is for the APIs and only has the identity claims
+        ClaimsIdentityResult accessToken = await ValidateTokenAsync(tokens.GetProperty(Parameters.AccessToken).GetString(), "api");
+        Assert.Equal(FakeUserDirectory.CompleteUser.Sid, accessToken.Get(Claims.Subject));
+        Assert.Equal(UserName, accessToken.Get(Claims.PreferredUsername));
+        Assert.Equal(WinOpenIDFactory.ClientId, accessToken.Get(Claims.ClientId));
+        Assert.Empty(accessToken.GetAll(Claims.Name));
+        Assert.Empty(accessToken.GetAll(Claims.Role));
+    }
+
+    [Fact]
+    public async Task AuthorizationCodeFlow_WrongCodeVerifier_IsRejected()
+    {
+        HttpResponseMessage response = await AuthorizeAsWindowsUserAsync(FakeUserDirectory.CompleteUser.Sid);
+        string code = ParseRedirect(response)[Parameters.Code];
+
+        response = await RedeemCodeAsync(code, codeVerifier: "wrong-verifier-wrong-verifier-wrong-verifier-123");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(Errors.InvalidGrant, (await ReadJsonAsync(response)).GetProperty(Parameters.Error).GetString());
+    }
+
+    [Fact]
+    public async Task Authorize_WindowsUserNotInDirectory_IsDenied()
+    {
+        HttpResponseMessage response = await AuthorizeAsWindowsUserAsync("S-1-5-21-1000-2000-3000-9999");
+
+        Assert.Equal(Errors.AccessDenied, ParseRedirect(response)[Parameters.Error]);
+        Assert.Contains(factory.GetAuditLog(), record => record.Level == LogLevel.Warning && record.Message.Contains("was not found in the directory"));
     }
 
     [Fact]
