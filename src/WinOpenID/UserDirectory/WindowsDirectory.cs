@@ -5,11 +5,11 @@ using System.Security.Principal;
 namespace WinOpenID.UserDirectory;
 
 // Searches the users in the Active Directory domain (when Domain is set) or in the local machine accounts
-public class WindowsUserDirectory : IUserDirectory
+public class WindowsDirectory : IDirectory
 {
     private readonly WinOpenIDOptions serverOptions;
 
-    public WindowsUserDirectory(IOptions<WinOpenIDOptions> serverOptions)
+    public WindowsDirectory(IOptions<WinOpenIDOptions> serverOptions)
     {
         this.serverOptions = serverOptions?.Value ?? throw new ArgumentNullException(nameof(serverOptions));
     }

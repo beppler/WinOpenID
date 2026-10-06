@@ -172,7 +172,7 @@ public class WinOpenIDEndpointsTests : IClassFixture<WinOpenIDFactory>
     public async Task AuthorizationCodeFlow_IssuesTokensWithTheDirectoryClaims()
     {
         // Authorization request authenticated by Windows: the code is returned to the client application
-        HttpResponseMessage response = await AuthorizeAsWindowsUserAsync(FakeUserDirectory.CompleteUser.Sid, new() { [Parameters.Scope] = "openid profile roles" });
+        HttpResponseMessage response = await AuthorizeAsWindowsUserAsync(FakeDirectory.CompleteUser.Sid, new() { [Parameters.Scope] = "openid profile roles" });
 
         var query = ParseRedirect(response);
         Assert.Equal("state", query[Parameters.State]);
@@ -192,7 +192,7 @@ public class WinOpenIDEndpointsTests : IClassFixture<WinOpenIDFactory>
 
         // The identity token is for the client application and has the profile claims
         ClaimsIdentityResult idToken = await ValidateTokenAsync(tokens.GetProperty(Parameters.IdToken).GetString(), WinOpenIDFactory.ClientId);
-        Assert.Equal(FakeUserDirectory.CompleteUser.Sid, idToken.Get(Claims.Subject));
+        Assert.Equal(FakeDirectory.CompleteUser.Sid, idToken.Get(Claims.Subject));
         Assert.Equal(UserName, idToken.Get(Claims.PreferredUsername));
         Assert.Equal("Maria da Silva", idToken.Get(Claims.Name));
         Assert.Equal("12345", idToken.Get(WinOpenIDClaims.EmployeeId));
@@ -201,7 +201,7 @@ public class WinOpenIDEndpointsTests : IClassFixture<WinOpenIDFactory>
 
         // The access token (encrypted) is for the APIs and only has the identity claims
         ClaimsIdentityResult accessToken = await ValidateTokenAsync(tokens.GetProperty(Parameters.AccessToken).GetString(), "api");
-        Assert.Equal(FakeUserDirectory.CompleteUser.Sid, accessToken.Get(Claims.Subject));
+        Assert.Equal(FakeDirectory.CompleteUser.Sid, accessToken.Get(Claims.Subject));
         Assert.Equal(UserName, accessToken.Get(Claims.PreferredUsername));
         Assert.Equal(WinOpenIDFactory.ClientId, accessToken.Get(Claims.ClientId));
         Assert.Empty(accessToken.GetAll(Claims.Name));
@@ -211,7 +211,7 @@ public class WinOpenIDEndpointsTests : IClassFixture<WinOpenIDFactory>
     [Fact]
     public async Task AuthorizationCodeFlow_WrongCodeVerifier_IsRejected()
     {
-        HttpResponseMessage response = await AuthorizeAsWindowsUserAsync(FakeUserDirectory.CompleteUser.Sid);
+        HttpResponseMessage response = await AuthorizeAsWindowsUserAsync(FakeDirectory.CompleteUser.Sid);
         string code = ParseRedirect(response)[Parameters.Code];
 
         response = await RedeemCodeAsync(code, codeVerifier: "wrong-verifier-wrong-verifier-wrong-verifier-123");

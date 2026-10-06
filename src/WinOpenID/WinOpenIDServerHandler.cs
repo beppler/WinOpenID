@@ -21,10 +21,10 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
     public const string AuditCategory = "WinOpenID.Audit";
 
     private readonly WinOpenIDOptions serverOptions;
-    private readonly IUserDirectory userDirectory;
+    private readonly IDirectory userDirectory;
     private readonly ILogger auditLogger;
 
-    public WinOpenIDServerHandler(IOptions<WinOpenIDOptions> serverOptions, IUserDirectory userDirectory, ILoggerFactory loggerFactory)
+    public WinOpenIDServerHandler(IOptions<WinOpenIDOptions> serverOptions, IDirectory userDirectory, ILoggerFactory loggerFactory)
     {
         this.serverOptions = serverOptions?.Value ?? throw new ArgumentNullException(nameof(serverOptions));
         this.userDirectory = userDirectory ?? throw new ArgumentNullException(nameof(userDirectory));
