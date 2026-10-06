@@ -2,7 +2,7 @@ using Microsoft.Extensions.Options;
 using System.DirectoryServices.AccountManagement;
 using System.Security.Principal;
 
-namespace WinOpenID;
+namespace WinOpenID.UserDirectory;
 
 // Searches the users in the Active Directory domain (when Domain is set) or in the local machine accounts
 public class WindowsUserDirectory : IUserDirectory

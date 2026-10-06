@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
+using WinOpenID.Tests.UserDirectory;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace WinOpenID.Tests;

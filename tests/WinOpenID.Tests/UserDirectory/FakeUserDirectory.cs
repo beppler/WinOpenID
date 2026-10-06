@@ -1,4 +1,6 @@
-namespace WinOpenID.Tests;
+using WinOpenID.UserDirectory;
+
+namespace WinOpenID.Tests.UserDirectory;
 
 // Directory with the users of the tests, indexed by SID
 public class FakeUserDirectory : IUserDirectory

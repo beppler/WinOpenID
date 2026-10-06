@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
+using WinOpenID.UserDirectory;
 
-namespace WinOpenID.Tests;
+namespace WinOpenID.Tests.UserDirectory;
 
 // Only the checks done before searching the directory: the search itself requires Windows and the accounts or Active Directory
 public class WindowsUserDirectoryTests

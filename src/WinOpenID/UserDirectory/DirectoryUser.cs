@@ -1,4 +1,4 @@
-namespace WinOpenID;
+namespace WinOpenID.UserDirectory;
 
 // User attributes read from the directory (Active Directory or local machine accounts)
 public sealed record DirectoryUser

@@ -1,4 +1,4 @@
-namespace WinOpenID;
+namespace WinOpenID.UserDirectory;
 
 // Directory where the users authenticated by Windows are searched
 public interface IUserDirectory

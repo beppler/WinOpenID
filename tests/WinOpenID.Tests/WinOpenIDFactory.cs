@@ -10,6 +10,8 @@ using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using WinOpenID.Tests.UserDirectory;
+using WinOpenID.UserDirectory;
 
 namespace WinOpenID.Tests;
 

@@ -8,6 +8,7 @@ using OpenIddict.Abstractions;
 using OpenIddict.Server;
 using System.Net;
 using System.Security.Claims;
+using WinOpenID.Tests.UserDirectory;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 using static OpenIddict.Server.OpenIddictServerEvents;
 
