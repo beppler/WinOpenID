@@ -10,6 +10,8 @@ using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using WinOpenID.Tests.UserDirectory;
+using WinOpenID.UserDirectory;
 
 namespace WinOpenID.Tests;
 
@@ -27,7 +29,7 @@ public class WinOpenIDFactory : WebApplicationFactory<Program>
 
     public FakeLoggerProvider LoggerProvider { get; } = new();
 
-    public FakeUserDirectory UserDirectory { get; } = new();
+    public FakeDirectory Directory { get; } = new();
 
     public string EncryptionKey { get; } = TestKeys.CreateEncryptionKey();
 
@@ -62,7 +64,7 @@ public class WinOpenIDFactory : WebApplicationFactory<Program>
                 options.SchemeMap[NegotiateDefaults.AuthenticationScheme].HandlerType = typeof(TestNegotiateHandler));
         });
 
-        builder.ConfigureTestServices(services => services.AddSingleton<IUserDirectory>(UserDirectory));
+        builder.ConfigureTestServices(services => services.AddSingleton<IDirectory>(Directory));
     }
 
     public IReadOnlyList<FakeLogRecord> GetAuditLog()

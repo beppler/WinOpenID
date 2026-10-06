@@ -1,7 +1,9 @@
-namespace WinOpenID.Tests;
+using WinOpenID.UserDirectory;
+
+namespace WinOpenID.Tests.UserDirectory;
 
 // Directory with the users of the tests, indexed by SID
-public class FakeUserDirectory : IUserDirectory
+public class FakeDirectory : IDirectory
 {
     // Domain user with all the attributes and groups
     public static readonly DirectoryUser CompleteUser = new()
@@ -25,7 +27,7 @@ public class FakeUserDirectory : IUserDirectory
 
     private readonly Dictionary<string, DirectoryUser> users;
 
-    public FakeUserDirectory(params DirectoryUser[] users)
+    public FakeDirectory(params DirectoryUser[] users)
     {
         this.users = (users.Length == 0 ? [CompleteUser, MinimalUser] : users).ToDictionary(user => user.Sid, StringComparer.Ordinal);
     }

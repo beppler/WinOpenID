@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
 using OpenIddict.Server;
 using System.Security.Claims;
+using WinOpenID.Tests.UserDirectory;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 using static OpenIddict.Server.OpenIddictServerEvents;
 
@@ -22,7 +23,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
     private const string UserName = @"EXAMPLE\maria";
 
     private readonly FakeLoggerProvider loggerProvider = new();
-    private readonly FakeUserDirectory userDirectory = new();
+    private readonly FakeDirectory directory = new();
     private readonly FakeAuthenticationService authenticationService = new();
 
     private WinOpenIDServerHandler CreateHandler(string domain = null)
@@ -35,7 +36,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
                 [ClientId] = new WinOpenIDClientOptions { RedirectUris = [RedirectUri], Scopes = [Scopes.OpenId, Scopes.Profile, Scopes.Email, Scopes.Phone, Scopes.Roles], Audiences = ["api", "other-api"] }
             }
         };
-        return new WinOpenIDServerHandler(Options.Create(serverOptions), userDirectory, new LoggerFactory([loggerProvider]));
+        return new WinOpenIDServerHandler(Options.Create(serverOptions), directory, new LoggerFactory([loggerProvider]));
     }
 
     // Principal created by the Negotiate authentication (a WindowsPrincipal on Windows)
@@ -83,7 +84,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
 
         Assert.True(context.IsRejected);
         Assert.Equal(Errors.ServerError, context.Error);
-        Assert.Empty(userDirectory.Calls);
+        Assert.Empty(directory.Calls);
     }
 
     [Fact]
@@ -95,19 +96,19 @@ public class WinOpenIDServerHandlerAuthorizationTests
         Assert.True(context.IsRequestHandled);
         Assert.False(context.IsRejected);
         Assert.Null(context.Principal);
-        Assert.Empty(userDirectory.Calls);
+        Assert.Empty(directory.Calls);
     }
 
     [Fact]
     public async Task WithUnauthenticatedIdentity_ChallengesNegotiate()
     {
-        authenticationService.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.PrimarySid, FakeUserDirectory.CompleteUser.Sid)]));
+        authenticationService.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.PrimarySid, FakeDirectory.CompleteUser.Sid)]));
 
         HandleAuthorizationRequestContext context = await HandleAsync("openid");
 
         Assert.Equal([NegotiateDefaults.AuthenticationScheme], authenticationService.Challenges);
         Assert.True(context.IsRequestHandled);
-        Assert.Empty(userDirectory.Calls);
+        Assert.Empty(directory.Calls);
     }
 
     [Theory]
@@ -122,7 +123,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
         Assert.True(context.IsRejected);
         Assert.Equal(Errors.AccessDenied, context.Error);
         Assert.Null(context.Principal);
-        Assert.Equal([(sid, false)], userDirectory.Calls);
+        Assert.Equal([(sid, false)], directory.Calls);
 
         FakeLogRecord record = Assert.Single(loggerProvider.Collector.GetSnapshot());
         Assert.Equal(WinOpenIDServerHandler.AuditCategory, record.Category);
@@ -138,7 +139,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
     [Fact]
     public async Task UnknownClient_IsRejected()
     {
-        authenticationService.User = CreateWindowsUser(FakeUserDirectory.CompleteUser.Sid);
+        authenticationService.User = CreateWindowsUser(FakeDirectory.CompleteUser.Sid);
 
         HandleAuthorizationRequestContext context = await HandleAsync("openid", clientId: "unknown");
 
@@ -150,7 +151,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
     [Fact]
     public async Task OpenIdScope_AddsOnlyTheIdentityClaims()
     {
-        authenticationService.User = CreateWindowsUser(FakeUserDirectory.CompleteUser.Sid);
+        authenticationService.User = CreateWindowsUser(FakeDirectory.CompleteUser.Sid);
 
         HandleAuthorizationRequestContext context = await HandleAsync("openid");
 
@@ -159,7 +160,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
         Assert.NotNull(principal);
 
         // Without domain, the subject is the SID
-        AssertSingleClaim(principal, Claims.Subject, FakeUserDirectory.CompleteUser.Sid);
+        AssertSingleClaim(principal, Claims.Subject, FakeDirectory.CompleteUser.Sid);
         AssertSingleClaim(principal, Claims.Username, UserName, Destinations.AccessToken, Destinations.IdentityToken);
         AssertSingleClaim(principal, Claims.PreferredUsername, UserName, Destinations.AccessToken, Destinations.IdentityToken);
         Assert.Equal([Scopes.OpenId], principal.GetScopes());
@@ -170,23 +171,23 @@ public class WinOpenIDServerHandlerAuthorizationTests
         Assert.DoesNotContain(principal.Claims, claim => profileClaims.Contains(claim.Type));
 
         // The groups are only loaded for the roles scope
-        Assert.Equal([(FakeUserDirectory.CompleteUser.Sid, false)], userDirectory.Calls);
+        Assert.Equal([(FakeDirectory.CompleteUser.Sid, false)], directory.Calls);
     }
 
     [Fact]
     public async Task WithDomain_SubjectIsTheObjectGuid()
     {
-        authenticationService.User = CreateWindowsUser(FakeUserDirectory.CompleteUser.Sid);
+        authenticationService.User = CreateWindowsUser(FakeDirectory.CompleteUser.Sid);
 
         HandleAuthorizationRequestContext context = await HandleAsync("openid", domain: "example.com");
 
-        AssertSingleClaim(context.Principal, Claims.Subject, FakeUserDirectory.CompleteUser.Guid.ToString());
+        AssertSingleClaim(context.Principal, Claims.Subject, FakeDirectory.CompleteUser.Guid.ToString());
     }
 
     [Fact]
     public async Task ProfileScope_AddsTheProfileClaims()
     {
-        authenticationService.User = CreateWindowsUser(FakeUserDirectory.CompleteUser.Sid);
+        authenticationService.User = CreateWindowsUser(FakeDirectory.CompleteUser.Sid);
 
         HandleAuthorizationRequestContext context = await HandleAsync("openid profile");
 
@@ -199,7 +200,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
     [Fact]
     public async Task EmailAndPhoneScopes_AddVerifiedClaims()
     {
-        authenticationService.User = CreateWindowsUser(FakeUserDirectory.CompleteUser.Sid);
+        authenticationService.User = CreateWindowsUser(FakeDirectory.CompleteUser.Sid);
 
         HandleAuthorizationRequestContext context = await HandleAsync("openid email phone");
 
@@ -212,20 +213,20 @@ public class WinOpenIDServerHandlerAuthorizationTests
     [Fact]
     public async Task RolesScope_AddsTheGroups()
     {
-        authenticationService.User = CreateWindowsUser(FakeUserDirectory.CompleteUser.Sid);
+        authenticationService.User = CreateWindowsUser(FakeDirectory.CompleteUser.Sid);
 
         HandleAuthorizationRequestContext context = await HandleAsync("openid roles");
 
         Claim[] roles = [.. context.Principal.Claims.Where(claim => claim.Type == Claims.Role)];
         Assert.Equal(["Domain Users", "Developers"], roles.Select(role => role.Value));
         Assert.All(roles, role => Assert.Equal([Destinations.IdentityToken], role.GetDestinations()));
-        Assert.Equal([(FakeUserDirectory.CompleteUser.Sid, true)], userDirectory.Calls);
+        Assert.Equal([(FakeDirectory.CompleteUser.Sid, true)], directory.Calls);
     }
 
     [Fact]
     public async Task UserWithoutOptionalAttributes_OnlyGetsTheIdentityClaims()
     {
-        authenticationService.User = CreateWindowsUser(FakeUserDirectory.MinimalUser.Sid, @"MACHINE\user");
+        authenticationService.User = CreateWindowsUser(FakeDirectory.MinimalUser.Sid, @"MACHINE\user");
 
         HandleAuthorizationRequestContext context = await HandleAsync("openid profile email phone roles");
 
@@ -238,7 +239,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
     [Fact]
     public async Task IssuedCode_IsAudited()
     {
-        authenticationService.User = CreateWindowsUser(FakeUserDirectory.CompleteUser.Sid);
+        authenticationService.User = CreateWindowsUser(FakeDirectory.CompleteUser.Sid);
 
         await HandleAsync("openid profile");
 
@@ -246,7 +247,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
         Assert.Equal(WinOpenIDServerHandler.AuditCategory, record.Category);
         Assert.Equal(LogLevel.Information, record.Level);
         Assert.Contains(UserName, record.Message);
-        Assert.Contains(FakeUserDirectory.CompleteUser.Sid, record.Message);
+        Assert.Contains(FakeDirectory.CompleteUser.Sid, record.Message);
         Assert.Contains(ClientId, record.Message);
         Assert.Contains(RedirectUri, record.Message);
         Assert.Contains("scopes: openid profile", record.Message);
