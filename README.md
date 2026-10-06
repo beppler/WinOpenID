@@ -1,5 +1,7 @@
 # WinOpenID
 
+**Português** | [English](README.en.md)
+
 Servidor OpenID Connect simples com autenticação integrada do Windows.
 
 O WinOpenID usa o [OpenIddict](https://documentation.openiddict.com/) em *degraded mode* (sem banco de dados: os clientes são cadastrados na própria configuração e os usuários vêm do diretório) para emitir tokens OpenID Connect a partir da autenticação integrada do Windows (Negotiate: Kerberos/NTLM).
