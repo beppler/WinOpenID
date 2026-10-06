@@ -11,7 +11,9 @@
     <File Path="README.en.md" />
     <File Path="README.md" />
   </Folder>
-  <Project Path="src/WinOpenID/WinOpenID.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/WinOpenID/WinOpenID.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/WinOpenID.Tests/WinOpenID.Tests.csproj" />
   </Folder>
