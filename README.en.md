@@ -318,6 +318,16 @@ The server can be tested with the [OpenID Connect Debugger](https://oidcdebugger
 
 The contents of signed tokens can be inspected at [jwt.io](https://jwt.io/).
 
+### Automated tests
+
+The unit and integration tests (xUnit v3) are in `tests/WinOpenID.Tests` and can be run with:
+
+```shell
+dotnet test
+```
+
+The integration tests run the server in memory with a client and keys generated for the test. Windows authentication and Active Directory aren't used, so issuing the *authorization code* isn't covered: it is still tested manually as described above.
+
 ## Credits and license
 
 Based on [OpenIddict-WindowsAuth](https://github.com/auroris/OpenIddict-WindowsAuth). Distributed under the terms of the license described in [LICENSE](LICENSE).
