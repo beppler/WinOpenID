@@ -328,6 +328,14 @@ dotnet test
 
 Os testes de integração sobem o servidor em memória com um cliente e chaves gerados para o teste. A autenticação Windows e o Active Directory não são usados, então a emissão do *authorization code* não é coberta: ela continua sendo testada manualmente como descrito acima.
 
+Para medir a cobertura de código (apenas do assembly `WinOpenID`, conforme `tests/WinOpenID.Tests/coverage.settings.xml`) e gerar um relatório HTML em `coverage-report/index.html`:
+
+```shell
+dotnet test -- --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml --coverage-settings tests/WinOpenID.Tests/coverage.settings.xml
+dotnet tool restore
+dotnet reportgenerator -reports:TestResults/coverage.cobertura.xml -targetdir:coverage-report
+```
+
 ## Créditos e licença
 
 Baseado em [OpenIddict-WindowsAuth](https://github.com/auroris/OpenIddict-WindowsAuth). Distribuído sob os termos da licença descrita em [LICENSE](LICENSE).

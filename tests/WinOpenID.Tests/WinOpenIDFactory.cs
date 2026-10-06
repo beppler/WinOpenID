@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -57,5 +58,13 @@ public class WinOpenIDFactory : WebApplicationFactory<Program>
     {
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
             => Task.FromResult(AuthenticateResult.NoResult());
+
+        // Same response as the Negotiate handler when the browser hasn't sent the Windows credentials yet
+        protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+        {
+            Response.StatusCode = StatusCodes.Status401Unauthorized;
+            Response.Headers.WWWAuthenticate = NegotiateDefaults.AuthenticationScheme;
+            return Task.CompletedTask;
+        }
     }
 }

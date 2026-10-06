@@ -48,6 +48,9 @@ Generated\ Files/
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
 
+# ReportGenerator coverage report
+coverage-report/
+
 # NUnit
 *.VisualState.xml
 TestResult.xml
@@ -144,6 +147,8 @@ _TeamCity*
 
 # Coverlet is a free, cross platform Code Coverage Tool
 coverage*[.json, .xml, .info]
+# Except the Microsoft Code Coverage settings of the tests
+!coverage.settings.xml
 
 # Visual Studio code coverage results
 *.coverage
