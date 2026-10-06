@@ -114,6 +114,18 @@ public class WinOpenIDEndpointsTests : IClassFixture<WinOpenIDFactory>
     }
 
     [Fact]
+    public async Task Authorize_ValidRequestWithoutWindowsUser_ChallengesNegotiate()
+    {
+        HttpResponseMessage response = await client.GetAsync(AuthorizeUri(), TestContext.Current.CancellationToken);
+
+        // The authorization code is only issued after the Windows authentication
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(["Negotiate"], response.Headers.WwwAuthenticate.Select(header => header.Scheme));
+        Assert.Null(response.Headers.Location);
+        Assert.Empty(factory.GetAuditLog());
+    }
+
+    [Fact]
     public async Task Authorize_UnknownClient_IsRejected()
     {
         HttpResponseMessage response = await client.GetAsync(
