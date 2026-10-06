@@ -30,7 +30,7 @@ public class WinOpenIDServerHandlerTests
                 [ClientId] = new WinOpenIDClientOptions { RedirectUris = [RedirectUri], Scopes = [Scopes.OpenId, Scopes.Profile], Audiences = ["api"] }
             }
         };
-        handler = new WinOpenIDServerHandler(Options.Create(serverOptions), new LoggerFactory([loggerProvider]));
+        handler = new WinOpenIDServerHandler(Options.Create(serverOptions), new FakeUserDirectory(), new LoggerFactory([loggerProvider]));
     }
 
     private static OpenIddictServerTransaction CreateTransaction(OpenIddictRequest request, HttpContext httpContext = null)
@@ -70,8 +70,9 @@ public class WinOpenIDServerHandlerTests
     [Fact]
     public void Constructor_RejectsNullArguments()
     {
-        Assert.Throws<ArgumentNullException>(() => new WinOpenIDServerHandler(null, NullLoggerFactory.Instance));
-        Assert.Throws<ArgumentNullException>(() => new WinOpenIDServerHandler(Options.Create(new WinOpenIDOptions()), null));
+        Assert.Throws<ArgumentNullException>(() => new WinOpenIDServerHandler(null, new FakeUserDirectory(), NullLoggerFactory.Instance));
+        Assert.Throws<ArgumentNullException>(() => new WinOpenIDServerHandler(Options.Create(new WinOpenIDOptions()), null, NullLoggerFactory.Instance));
+        Assert.Throws<ArgumentNullException>(() => new WinOpenIDServerHandler(Options.Create(new WinOpenIDOptions()), new FakeUserDirectory(), null));
     }
 
     [Fact]
