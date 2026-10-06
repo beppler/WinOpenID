@@ -29,7 +29,7 @@ public class WinOpenIDFactory : WebApplicationFactory<Program>
 
     public FakeLoggerProvider LoggerProvider { get; } = new();
 
-    public FakeDirectory UserDirectory { get; } = new();
+    public FakeDirectory Directory { get; } = new();
 
     public string EncryptionKey { get; } = TestKeys.CreateEncryptionKey();
 
@@ -64,7 +64,7 @@ public class WinOpenIDFactory : WebApplicationFactory<Program>
                 options.SchemeMap[NegotiateDefaults.AuthenticationScheme].HandlerType = typeof(TestNegotiateHandler));
         });
 
-        builder.ConfigureTestServices(services => services.AddSingleton<IDirectory>(UserDirectory));
+        builder.ConfigureTestServices(services => services.AddSingleton<IDirectory>(Directory));
     }
 
     public IReadOnlyList<FakeLogRecord> GetAuditLog()

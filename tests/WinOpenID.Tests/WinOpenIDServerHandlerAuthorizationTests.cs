@@ -23,7 +23,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
     private const string UserName = @"EXAMPLE\maria";
 
     private readonly FakeLoggerProvider loggerProvider = new();
-    private readonly FakeDirectory userDirectory = new();
+    private readonly FakeDirectory directory = new();
     private readonly FakeAuthenticationService authenticationService = new();
 
     private WinOpenIDServerHandler CreateHandler(string domain = null)
@@ -36,7 +36,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
                 [ClientId] = new WinOpenIDClientOptions { RedirectUris = [RedirectUri], Scopes = [Scopes.OpenId, Scopes.Profile, Scopes.Email, Scopes.Phone, Scopes.Roles], Audiences = ["api", "other-api"] }
             }
         };
-        return new WinOpenIDServerHandler(Options.Create(serverOptions), userDirectory, new LoggerFactory([loggerProvider]));
+        return new WinOpenIDServerHandler(Options.Create(serverOptions), directory, new LoggerFactory([loggerProvider]));
     }
 
     // Principal created by the Negotiate authentication (a WindowsPrincipal on Windows)
@@ -84,7 +84,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
 
         Assert.True(context.IsRejected);
         Assert.Equal(Errors.ServerError, context.Error);
-        Assert.Empty(userDirectory.Calls);
+        Assert.Empty(directory.Calls);
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
         Assert.True(context.IsRequestHandled);
         Assert.False(context.IsRejected);
         Assert.Null(context.Principal);
-        Assert.Empty(userDirectory.Calls);
+        Assert.Empty(directory.Calls);
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
 
         Assert.Equal([NegotiateDefaults.AuthenticationScheme], authenticationService.Challenges);
         Assert.True(context.IsRequestHandled);
-        Assert.Empty(userDirectory.Calls);
+        Assert.Empty(directory.Calls);
     }
 
     [Theory]
@@ -123,7 +123,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
         Assert.True(context.IsRejected);
         Assert.Equal(Errors.AccessDenied, context.Error);
         Assert.Null(context.Principal);
-        Assert.Equal([(sid, false)], userDirectory.Calls);
+        Assert.Equal([(sid, false)], directory.Calls);
 
         FakeLogRecord record = Assert.Single(loggerProvider.Collector.GetSnapshot());
         Assert.Equal(WinOpenIDServerHandler.AuditCategory, record.Category);
@@ -171,7 +171,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
         Assert.DoesNotContain(principal.Claims, claim => profileClaims.Contains(claim.Type));
 
         // The groups are only loaded for the roles scope
-        Assert.Equal([(FakeDirectory.CompleteUser.Sid, false)], userDirectory.Calls);
+        Assert.Equal([(FakeDirectory.CompleteUser.Sid, false)], directory.Calls);
     }
 
     [Fact]
@@ -220,7 +220,7 @@ public class WinOpenIDServerHandlerAuthorizationTests
         Claim[] roles = [.. context.Principal.Claims.Where(claim => claim.Type == Claims.Role)];
         Assert.Equal(["Domain Users", "Developers"], roles.Select(role => role.Value));
         Assert.All(roles, role => Assert.Equal([Destinations.IdentityToken], role.GetDestinations()));
-        Assert.Equal([(FakeDirectory.CompleteUser.Sid, true)], userDirectory.Calls);
+        Assert.Equal([(FakeDirectory.CompleteUser.Sid, true)], directory.Calls);
     }
 
     [Fact]

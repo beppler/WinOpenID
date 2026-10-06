@@ -21,13 +21,13 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
     public const string AuditCategory = "WinOpenID.Audit";
 
     private readonly WinOpenIDOptions serverOptions;
-    private readonly IDirectory userDirectory;
+    private readonly IDirectory directory;
     private readonly ILogger auditLogger;
 
-    public WinOpenIDServerHandler(IOptions<WinOpenIDOptions> serverOptions, IDirectory userDirectory, ILoggerFactory loggerFactory)
+    public WinOpenIDServerHandler(IOptions<WinOpenIDOptions> serverOptions, IDirectory directory, ILoggerFactory loggerFactory)
     {
         this.serverOptions = serverOptions?.Value ?? throw new ArgumentNullException(nameof(serverOptions));
-        this.userDirectory = userDirectory ?? throw new ArgumentNullException(nameof(userDirectory));
+        this.directory = directory ?? throw new ArgumentNullException(nameof(directory));
         ArgumentNullException.ThrowIfNull(loggerFactory);
         auditLogger = loggerFactory.CreateLogger(AuditCategory);
     }
@@ -82,7 +82,7 @@ public class WinOpenIDServerHandler : IOpenIddictServerHandler<ValidateAuthoriza
         string userSid = authenticatedUser.FindFirst(ClaimTypes.PrimarySid)?.Value;
 
         // Search by SID as SID is unique (user names can clash on trusted domains)
-        DirectoryUser userInfo = await userDirectory.FindBySidAsync(userSid, includeGroups: context.Request.HasScope(Scopes.Roles), context.CancellationToken);
+        DirectoryUser userInfo = await directory.FindBySidAsync(userSid, includeGroups: context.Request.HasScope(Scopes.Roles), context.CancellationToken);
         if (userInfo == null)
         {
             auditLogger.LogWarning(
