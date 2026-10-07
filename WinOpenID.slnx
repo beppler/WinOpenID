@@ -10,7 +10,6 @@
     <File Path="Directory.Packages.props" />
     <File Path="dotnet-tools.json" />
     <File Path="global.json" />
-    <File Path="README.en.md" />
     <File Path="README.md" />
   </Folder>
   <Folder Name="/src/">
