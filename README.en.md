@@ -273,7 +273,7 @@ The category can be enabled in production without enabling the other logs at `In
 }
 ```
 
-In IIS the console output is discarded. On Windows, ASP.NET Core already registers the *EventLog* provider, which by default writes only `Warning` or above to the *Application* log in Event Viewer. To also write the issuance events:
+In IIS and in the Windows service the console output is discarded. On Windows, ASP.NET Core already registers the *EventLog* provider, which by default writes only `Warning` or above to the *Application* log in Event Viewer (in the Windows service, with the `WinOpenID` source; see [Windows service](#windows-service)). To also write the issuance events:
 
 ```json
 {
@@ -291,9 +291,136 @@ Any other logging provider compatible with ASP.NET Core can also be used.
 
 > **Warning:** audit logs contain personal data (login name, IP address and port) and must follow the organization's data retention and protection policy.
 
+## Deployment
+
+The server can be deployed in two ways:
+
+- **Windows service**: the executable itself, with Kestrel, runs as a service and serves the HTTPS requests directly. It does not depend on IIS.
+- **IIS**: the server runs inside an IIS *Application Pool*, which handles HTTPS and Windows authentication.
+
+In both cases, use the server's public address in `Issuer` and `AllowedHosts` (see [Issuer and allowed hosts](#issuer-and-allowed-hosts)) and configure the keys, the clients and `Domain` before starting the server.
+
+### Publishing
+
+```shell
+dotnet publish src/WinOpenID -c Release -o C:\WinOpenID
+```
+
+The publish folder contains `WinOpenID.exe`, `WinOpenID.dll` and `appsettings.json`, and the target server needs the [ASP.NET Core Runtime 10](https://dotnet.microsoft.com/download) (on IIS, the *Hosting Bundle*, which already includes it). To not depend on the installed runtime, publish with `-r win-x64 --self-contained`.
+
+The `appsettings.{Environment}.json` files are not published, so that an update does not overwrite the production configuration. Without the `ASPNETCORE_ENVIRONMENT` variable, the environment is `Production`, so the production configuration (clients, `Issuer`, `Domain`, keys etc.) can be kept in an `appsettings.Production.json` created directly in the server folder, or in environment variables.
+
+> **Warning:** if the keys are kept in a file, restrict access to it to administrators and to the account that runs the server. For example, with the SIDs of the *Administrators* and *SYSTEM* groups, which do not depend on the Windows language:
+>
+> ```cmd
+> icacls C:\WinOpenID\appsettings.Production.json /inheritance:r /grant:r *S-1-5-32-544:F *S-1-5-18:F "<server account>:R"
+> ```
+
+### Kerberos and browsers
+
+Windows authentication tries Kerberos first and, if that fails, uses NTLM. For Kerberos to work with the server's public name (for example `identity.example.com`), the `HTTP/identity.example.com` SPN must be registered on the account that validates the tickets:
+
+| Account | Where to register the SPN |
+|---|---|
+| gMSA or domain account | On the account itself: `setspn -S HTTP/identity.example.com DOMAIN\WinOpenID$` |
+| Virtual account (`NT SERVICE\...`), `NETWORK SERVICE` or `ApplicationPoolIdentity` | On the computer account: `setspn -S HTTP/identity.example.com DOMAIN\SERVER$` |
+
+When the public name is the computer's own name, the `HOST/` SPN the computer already has is enough for the accounts in the second row. Each SPN can only be registered on one account (`-S` checks for duplicates), and the client requests the ticket by the name typed in the URL, not by the name a DNS alias (`CNAME`) resolves to; so prefer an `A` record for the public name. To check, on a workstation logged on to the domain: `klist get HTTP/identity.example.com`.
+
+Browsers only send Windows credentials automatically to trusted sites. In Edge and Chrome, add the server address to the *Local intranet* zone (through group policy, in *Site to Zone Assignment List*) or to the `AuthServerAllowlist` policy; in Firefox, to the `network.negotiate-auth.trusted-uris` preference. Otherwise, the browser prompts for user name and password.
+
+### Windows service
+
+In this mode, the server uses the executable folder as the content root, from which the `appsettings*.json` files are read, and tells Windows when it has finished starting and when it must stop.
+
+**Service account.** Use a [gMSA (*group Managed Service Account*)](https://learn.microsoft.com/windows-server/identity/ad-ds/manage/group-managed-service-accounts/group-managed-service-accounts/group-managed-service-accounts-overview) or, more simply, the service's virtual account (`NT SERVICE\WinOpenID`), which accesses the network as the computer account. Both can query Active Directory without a configured password. Avoid `LocalSystem`, which has too many privileges, and `LOCAL SERVICE`, which accesses the network anonymously and cannot query AD. The account needs read and execute permission on the server folder.
+
+**HTTPS.** The certificate is read from the computer's certificate store, through the Kestrel configuration in `appsettings.Production.json`:
+
+```json
+{
+  "Kestrel": {
+    "Endpoints": {
+      "Https": {
+        "Url": "https://*:443",
+        "Certificate": {
+          "Subject": "identity.example.com",
+          "Store": "My",
+          "Location": "LocalMachine"
+        }
+      }
+    }
+  }
+}
+```
+
+The service account needs read permission on the certificate's private key: in `certlm.msc`, *Personal* → *Certificates* → right-click the certificate → *All Tasks* → *Manage Private Keys*. See the other options in [Configure endpoints for Kestrel](https://learn.microsoft.com/aspnet/core/fundamentals/servers/kestrel/endpoints).
+
+**Installation.** In a PowerShell running as administrator:
+
+```powershell
+# Create the service with automatic start
+New-Service -Name WinOpenID -DisplayName "WinOpenID" -BinaryPathName "C:\WinOpenID\WinOpenID.exe" -StartupType Automatic
+
+# Set the service account: the virtual account...
+sc.exe config WinOpenID obj= "NT SERVICE\WinOpenID"
+# ...or a gMSA (no password; the trailing $ is part of the name)
+sc.exe config WinOpenID obj= "DOMAIN\WinOpenID$"
+
+# Create the event log source used by the service (see Auditing)
+[System.Diagnostics.EventLog]::CreateEventSource("WinOpenID", "Application")
+
+# Open the port in the firewall
+New-NetFirewallRule -DisplayName "WinOpenID (HTTPS)" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
+
+Start-Service WinOpenID
+```
+
+A gMSA also needs the *Log on as a service* right (`secpol.msc` → *Local Policies* → *User Rights Assignment*), which is granted automatically only when the account is set through the *Services* console. If the service does not start, the errors are in the *Application* log in Event Viewer.
+
+**Updating.** Stop the service, replace the files in the folder (`appsettings.Production.json` is not part of the publish output and is preserved) and start the service again:
+
+```powershell
+Stop-Service WinOpenID
+Copy-Item -Path \\build\WinOpenID\* -Destination C:\WinOpenID -Recurse -Force   # folder with the new published version
+Start-Service WinOpenID
+```
+
+To remove the service, use `Stop-Service WinOpenID` and `sc.exe delete WinOpenID`.
+
 ### Hosting on IIS
 
-On IIS 10 or later, the keys can be configured without application files, as *Application Pool* environment variables. They are stored in `applicationHost.config`, outside the application folder, and only that pool's process receives them. For example, for a pool named `WinOpenID`:
+**Prerequisites.** Install IIS with the Windows authentication feature and, after it, the .NET 10 [ASP.NET Core Hosting Bundle](https://learn.microsoft.com/aspnet/core/host-and-deploy/iis/hosting-bundle). On Windows Server:
+
+```powershell
+Install-WindowsFeature Web-Server, Web-Windows-Auth -IncludeManagementTools
+```
+
+If the *Hosting Bundle* is installed before IIS, repair the installation afterwards. After installing it, restart IIS with `net stop was /y` and `net start w3svc`.
+
+**Application Pool and site.** Publish the server to a folder on the server (for example `C:\inetpub\WinOpenID`); publishing already generates the `web.config` with the ASP.NET Core module. Then create an *Application Pool* with no managed code and the site:
+
+```cmd
+%windir%\system32\inetsrv\appcmd add apppool /name:WinOpenID /managedRuntimeVersion:""
+%windir%\system32\inetsrv\appcmd add site /name:WinOpenID /physicalPath:C:\inetpub\WinOpenID /bindings:https/*:443:identity.example.com
+%windir%\system32\inetsrv\appcmd set app "WinOpenID/" /applicationPool:WinOpenID
+```
+
+In IIS Manager, edit the site's `https` binding to select the certificate (and enable SNI, if there is more than one site on port 443).
+
+**Authentication.** Enable Windows authentication on the site and keep anonymous authentication enabled: the token, discovery and public keys endpoints are anonymous, and the server only asks for Windows authentication on the authorization endpoint, which IIS then performs:
+
+```cmd
+%windir%\system32\inetsrv\appcmd set config "WinOpenID" -section:system.webServer/security/authentication/windowsAuthentication /enabled:true /commit:apphost
+```
+
+**Pool identity.** The default identity (`ApplicationPoolIdentity`) accesses the network as the computer account and can query Active Directory. It needs read permission on the site folder (`IIS AppPool\WinOpenID`). If the pool uses a gMSA or domain account, the SPN must be registered on that account (see [Kerberos and browsers](#kerberos-and-browsers)) and IIS must validate the tickets with the pool credentials:
+
+```cmd
+%windir%\system32\inetsrv\appcmd set config "WinOpenID" -section:system.webServer/security/authentication/windowsAuthentication /useAppPoolCredentials:true /commit:apphost
+```
+
+**Keys.** On IIS 10 or later, the keys can be configured without application files, as *Application Pool* environment variables. They are stored in `applicationHost.config`, outside the application folder, and only that pool's process receives them. For example, for a pool named `WinOpenID`:
 
 ```cmd
 %windir%\system32\inetsrv\appcmd set config -section:system.applicationHost/applicationPools ^
@@ -306,6 +433,8 @@ On IIS 10 or later, the keys can be configured without application files, as *Ap
 For rotation, add the other keys with the indexes `__1`, `__2` etc. The configuration can also be done through IIS Manager: *Configuration Editor* → `system.applicationHost/applicationPools` → the pool's `environmentVariables`.
 
 After changing the variables, recycle the *Application Pool*. The values are stored in plain text in `applicationHost.config`, which by default can only be read by administrators. Avoid using system environment variables: they are visible to every process on the machine and are only read by IIS after an `iisreset`.
+
+**Updating.** The server files are locked while the pool is running. Before copying the new version, create an `app_offline.htm` file in the site folder (IIS shuts the server down and responds with that file) and remove it at the end, or stop the *Application Pool* during the copy.
 
 ## Testing
 
