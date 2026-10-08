@@ -333,7 +333,7 @@ In this mode, the server uses the executable folder as the content root, from wh
 
 **Service account.** Use a [gMSA (*group Managed Service Account*)](https://learn.microsoft.com/windows-server/identity/ad-ds/manage/group-managed-service-accounts/group-managed-service-accounts/group-managed-service-accounts-overview) or, more simply, the service's virtual account (`NT SERVICE\WinOpenID`), which accesses the network as the computer account. Both can query Active Directory without a configured password. Avoid `LocalSystem`, which has too many privileges, and `LOCAL SERVICE`, which accesses the network anonymously and cannot query AD. The account needs read and execute permission on the server folder.
 
-**HTTPS.** The certificate is read from the computer's certificate store, through the Kestrel configuration in `appsettings.Production.json`:
+**HTTPS.** In this mode Kestrel serves HTTPS itself, so the HTTPS endpoint must be configured: without it, the server listens only on `http://localhost:5000` and is not reachable over HTTPS. The certificate is read from the computer's certificate store, through the Kestrel configuration in `appsettings.Production.json` (the sample `src/WinOpenID/appsettings.Production.json` already contains this section, next to `AllowedHosts` and `Issuer`, which must use the same host name as the certificate):
 
 ```json
 {
@@ -352,7 +352,9 @@ In this mode, the server uses the executable folder as the content root, from wh
 }
 ```
 
-The service account needs read permission on the certificate's private key: in `certlm.msc`, *Personal* → *Certificates* → right-click the certificate → *All Tasks* → *Manage Private Keys*. See the other options in [Configure endpoints for Kestrel](https://learn.microsoft.com/aspnet/core/fundamentals/servers/kestrel/endpoints).
+The certificate is selected once, when the service starts: Kestrel looks in the *Personal* store of the computer (`LocalMachine\My`) for the certificates whose subject *contains* the `Subject` value (so prefer the full host name), keeps the valid ones that allow server authentication and have a private key, and uses the one with the latest expiration date. Therefore, after renewing the certificate, restart the service (`Restart-Service WinOpenID`) for the new one to be used.
+
+The service account needs read permission on the certificate's private key (including on each renewed certificate): in `certlm.msc`, *Personal* → *Certificates* → right-click the certificate → *All Tasks* → *Manage Private Keys*. See the other options in [Configure endpoints for Kestrel](https://learn.microsoft.com/aspnet/core/fundamentals/servers/kestrel/endpoints).
 
 **Installation.** In a PowerShell running as administrator:
 
@@ -404,7 +406,7 @@ If the *Hosting Bundle* is installed before IIS, repair the installation afterwa
 %windir%\system32\inetsrv\appcmd set app "WinOpenID/" /applicationPool:WinOpenID
 ```
 
-In IIS Manager, edit the site's `https` binding to select the certificate (and enable SNI, if there is more than one site on port 443).
+In IIS Manager, edit the site's `https` binding to select the certificate (and enable SNI, if there is more than one site on port 443). On IIS, the `Kestrel` section of the configuration (see [Windows service](#windows-service)) is not used: HTTPS and the certificate are handled by IIS.
 
 **Authentication.** Enable Windows authentication on the site and keep anonymous authentication enabled: the token, discovery and public keys endpoints are anonymous, and the server only asks for Windows authentication on the authorization endpoint, which IIS then performs:
 
